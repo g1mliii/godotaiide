@@ -1,0 +1,192 @@
+# ============================================
+# SENSITIVE FILES - NEVER COMMIT
+# ============================================
+*.env
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+credentials.json
+secrets.json
+config.local.*
+api_keys.txt
+
+# ============================================
+# MARKDOWN & AGENT FILES (As Requested)
+# ============================================
+*.md
+!README.md
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
+!SECURITY.md
+!.github/**/*.md
+AGENTS.md
+.cursor/
+.cursorrules
+.github/copilot-instructions.md
+
+# ============================================
+# PYTHON
+# ============================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.python-version
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyCharm
+.idea/
+
+# ============================================
+# GODOT
+# ============================================
+.godot/
+.import/
+export.cfg
+export_presets.cfg
+*.translation
+
+# Godot-specific ignores
+.mono/
+data_*/
+mono_crash.*.json
+
+# ============================================
+# AI / ML
+# ============================================
+# ChromaDB
+.chroma/
+chroma_data/
+.godot_minds/
+
+# Models
+*.gguf
+*.bin
+*.safetensors
+models/
+
+# ============================================
+# IDEs & EDITORS
+# ============================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# JetBrains
+.idea/
+*.iml
+
+# ============================================
+# OPERATING SYSTEM
+# ============================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.directory
+
+# ============================================
+# LOGS & DATABASES
+# ============================================
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# ============================================
+# TEMPORARY FILES
+# ============================================
+*.tmp
+*.temp
+*.bak
+*.cache
+.cache/
+
+# ============================================
+# BUILD / DISTRIBUTION
+# ============================================
+# Python builds
+*.spec
+*.exe
+*.app
+
+# Node (if used)
+node_modules/
+package-lock.json
+
+# Compiled addons
+*.so
+*.dylib
+*.dll

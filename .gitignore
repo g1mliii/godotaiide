@@ -190,3 +190,8 @@ package-lock.json
 *.so
 *.dylib
 *.dll
+
+# ============================================
+# TEMPORARY AGENT SKILLS REFERENCE
+# ============================================
+agent_skills_temp/

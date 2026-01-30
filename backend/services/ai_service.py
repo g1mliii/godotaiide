@@ -1,14 +1,17 @@
 """
 AI service orchestrator - routes requests to appropriate provider
 """
+
 from typing import Optional, List, Dict
 from pathlib import Path
 import weakref
 import aiofiles
+import re
 
 from ai_providers.base import AIProvider
 from ai_providers.direct_api import DirectAPIProvider
 from ai_providers.ollama import OllamaProvider
+from ai_providers.opencode import OpenCodeProvider
 from services.indexer_service import CodeIndexer
 from services.git_service import GitService
 from config import settings
@@ -21,13 +24,17 @@ class AIService:
         self,
         git_service: Optional[GitService] = None,
         indexer_service: Optional[CodeIndexer] = None,
-        watcher_service = None,
+        watcher_service=None,
     ):
         """Initialize AI service"""
         # Use weak references to avoid circular references
         self._git_service_ref = weakref.ref(git_service) if git_service else None
-        self._indexer_service_ref = weakref.ref(indexer_service) if indexer_service else None
-        self._watcher_service_ref = weakref.ref(watcher_service) if watcher_service else None
+        self._indexer_service_ref = (
+            weakref.ref(indexer_service) if indexer_service else None
+        )
+        self._watcher_service_ref = (
+            weakref.ref(watcher_service) if watcher_service else None
+        )
 
         # Initialize indexer if not provided
         if not indexer_service:
@@ -40,7 +47,7 @@ class AIService:
             try:
                 git_svc = GitService("..")
                 self._git_service_ref = weakref.ref(git_svc)
-            except:
+            except Exception:
                 pass
 
         # Provider cache to prevent creating new HTTP clients on every request
@@ -57,7 +64,7 @@ class AIService:
         if self._indexer_service_ref:
             return self._indexer_service_ref()
         # Fallback to local instance if created in __init__
-        return getattr(self, '_indexer', None)
+        return getattr(self, "_indexer", None)
 
     @property
     def watcher_service(self):
@@ -111,8 +118,7 @@ class AIService:
             return OllamaProvider()
 
         elif active_mode == "opencode":
-            # TODO: Implement OpenCode provider
-            raise NotImplementedError("OpenCode mode not yet implemented")
+            return OpenCodeProvider()
 
         else:
             raise ValueError(f"Unknown AI mode: {active_mode}")
@@ -129,13 +135,13 @@ class AIService:
         file_path: Optional[str] = None,
         file_content: Optional[str] = None,
         selection: Optional[Dict[str, int]] = None,
-        mode: Optional[str] = None
+        mode: Optional[str] = None,
     ) -> Dict[str, str]:
         """
         Ask AI for code assistance (Cmd+K functionality)
 
         Args:
-            prompt: User's request
+            prompt: User's request (supports @filename syntax)
             file_path: Path to the file being edited
             file_content: Content of the file
             selection: Selected lines (start_line, end_line)
@@ -149,18 +155,24 @@ class AIService:
         # Gather context
         context = await self._gather_context(file_path, file_content, selection)
 
+        # Extract and include @mentioned files
+        mentioned_files = self._extract_file_mentions(prompt)
+        if mentioned_files:
+            file_context = await self._gather_file_context(mentioned_files)
+            context = f"{context}\n\n---\n\n{file_context}" if context else file_context
+
         # Get AI response
         response = await provider.ask(
             prompt,
             context=context,
-            system_prompt="You are an expert Godot Engine developer. Provide clear, working code solutions."
+            system_prompt="You are an expert Godot Engine developer. Provide clear, working code solutions.",
         )
 
         # Parse response (simplified - in production, you'd extract code blocks)
         return {
             "response": response,
             "code": None,  # TODO: Extract code from response
-            "explanation": None
+            "explanation": None,
         }
 
     async def chat(
@@ -168,7 +180,7 @@ class AIService:
         message: str,
         history: Optional[List[Dict[str, str]]] = None,
         context_files: Optional[List[str]] = None,
-        mode: Optional[str] = None
+        mode: Optional[str] = None,
     ) -> str:
         """
         Chat conversation with AI
@@ -184,13 +196,19 @@ class AIService:
         """
         provider = self._get_provider(mode)
 
+        # Extract @filename mentions from message
+        mentioned_files = self._extract_file_mentions(message)
+
+        # Combine with explicitly provided context files
+        all_context_files = list(set((context_files or []) + mentioned_files))
+
         # Build message history
         messages = history or []
         messages.append({"role": "user", "content": message})
 
         # Add context from referenced files
-        if context_files:
-            file_context = await self._gather_file_context(context_files)
+        if all_context_files:
+            file_context = await self._gather_file_context(all_context_files)
             # Prepend context to the last user message
             messages[-1]["content"] = f"{file_context}\n\n{message}"
 
@@ -202,7 +220,7 @@ class AIService:
         file_content: str,
         cursor_line: int,
         cursor_column: int,
-        mode: Optional[str] = None
+        mode: Optional[str] = None,
     ) -> str:
         """
         Get inline code completion
@@ -221,8 +239,14 @@ class AIService:
 
         # Split content at cursor
         lines = file_content.split("\n")
-        code_before = "\n".join(lines[:cursor_line]) + "\n" + lines[cursor_line][:cursor_column]
-        code_after = lines[cursor_line][cursor_column:] + "\n" + "\n".join(lines[cursor_line + 1:])
+        code_before = (
+            "\n".join(lines[:cursor_line]) + "\n" + lines[cursor_line][:cursor_column]
+        )
+        code_after = (
+            lines[cursor_line][cursor_column:]
+            + "\n"
+            + "\n".join(lines[cursor_line + 1 :])
+        )
 
         # Determine language from file extension
         language = Path(file_path).suffix.lstrip(".")
@@ -231,16 +255,14 @@ class AIService:
             "cs": "csharp",
             "cpp": "cpp",
             "h": "cpp",
-            "hpp": "cpp"
+            "hpp": "cpp",
         }
         language = lang_map.get(language, language)
 
         return await provider.complete(code_before, code_after, language)
 
     async def generate_commit_message(
-        self,
-        staged_files: List[str],
-        diff_content: Optional[str] = None
+        self, staged_files: List[str], diff_content: Optional[str] = None
     ) -> str:
         """
         Generate commit message from staged changes
@@ -261,7 +283,7 @@ class AIService:
                 try:
                     diff = self.git_service.get_diff(file_path)
                     diffs.append(f"File: {file_path}\n{diff.diff_text}")
-                except:
+                except Exception:
                     pass
             diff_content = "\n\n".join(diffs)
 
@@ -273,14 +295,14 @@ Provide only the commit message, following conventional commit format (e.g., "fe
 
         return await provider.ask(
             prompt,
-            system_prompt="You are a git commit message generator. Provide only the commit message, no explanations."
+            system_prompt="You are a git commit message generator. Provide only the commit message, no explanations.",
         )
 
     async def _gather_context(
         self,
         file_path: Optional[str],
         file_content: Optional[str],
-        selection: Optional[Dict[str, int]]
+        selection: Optional[Dict[str, int]],
     ) -> str:
         """Gather context for AI request"""
         context_parts = []
@@ -289,7 +311,9 @@ Provide only the commit message, following conventional commit format (e.g., "fe
         if file_content:
             if selection:
                 lines = file_content.split("\n")
-                selected = "\n".join(lines[selection["start_line"]:selection["end_line"] + 1])
+                selected = "\n".join(
+                    lines[selection["start_line"] : selection["end_line"] + 1]
+                )
                 context_parts.append(f"Selected code:\n{selected}")
             else:
                 context_parts.append(f"Current file:\n{file_content}")
@@ -307,6 +331,36 @@ Provide only the commit message, following conventional commit format (e.g., "fe
 
         return "\n\n---\n\n".join(context_parts)
 
+    def _extract_file_mentions(self, message: str) -> List[str]:
+        """
+        Extract @filename mentions from message
+
+        Supports formats:
+        - @filename.gd
+        - @path/to/file.cs
+        - @"path with spaces/file.cpp"
+        - @'path with spaces/file.h'
+
+        Args:
+            message: User message with potential @mentions
+
+        Returns:
+            List of mentioned file paths
+        """
+        # Pattern to match @mentions with optional quotes
+        pattern = r'@(?:"([^"]+)"|\'([^\']+)\'|([^\s]+))'
+        matches = re.findall(pattern, message)
+
+        # Extract non-empty groups (one of the three capture groups will match)
+        file_paths = []
+        for match in matches:
+            # match is a tuple of (quoted_double, quoted_single, unquoted)
+            file_path = match[0] or match[1] or match[2]
+            if file_path:
+                file_paths.append(file_path)
+
+        return file_paths
+
     async def _gather_file_context(self, file_paths: List[str]) -> str:
         """Gather context from referenced files"""
         context_parts = []
@@ -315,10 +369,12 @@ Provide only the commit message, following conventional commit format (e.g., "fe
             try:
                 full_path = Path(file_path)
                 if full_path.exists():
-                    async with aiofiles.open(full_path, mode="r", encoding="utf-8") as f:
+                    async with aiofiles.open(
+                        full_path, mode="r", encoding="utf-8"
+                    ) as f:
                         content = await f.read()
                     context_parts.append(f"File: {file_path}\n```\n{content}\n```")
-            except:
+            except Exception:
                 pass
 
         return "\n\n".join(context_parts)

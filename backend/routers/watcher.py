@@ -1,6 +1,7 @@
 """
 Watcher router - API endpoints for file watching
 """
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -21,6 +22,7 @@ except Exception as e:
 
 class WatchRequest(BaseModel):
     """Request to start watching a directory"""
+
     path: str
 
 
@@ -31,11 +33,11 @@ async def start_watching(request: WatchRequest):
         raise HTTPException(status_code=500, detail="Watcher service not initialized")
 
     try:
-        watcher_service.start_watching(request.path)
+        await watcher_service.start_watching(request.path)
         return {
             "status": "success",
             "message": f"Started watching {request.path}",
-            "watching": True
+            "watching": True,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -49,11 +51,7 @@ async def stop_watching():
 
     try:
         watcher_service.stop_watching()
-        return {
-            "status": "success",
-            "message": "Stopped watching",
-            "watching": False
-        }
+        return {"status": "success", "message": "Stopped watching", "watching": False}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

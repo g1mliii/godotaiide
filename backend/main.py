@@ -2,6 +2,7 @@
 Godot-Minds Backend Server
 FastAPI + WebSocket server for AI-powered Godot plugin
 """
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -22,7 +23,7 @@ app = FastAPI(
     title="Godot-Minds Backend",
     description="AI-powered backend for Godot editor plugin with Git integration",
     version="0.1.0",
-    debug=settings.debug
+    debug=settings.debug,
 )
 
 # Configure CORS for Godot HTTP requests
@@ -39,11 +40,7 @@ app.add_middleware(
 async def health_check():
     """Health check endpoint"""
     return JSONResponse(
-        content={
-            "status": "ok",
-            "version": "0.1.0",
-            "ai_mode": settings.ai_mode
-        }
+        content={"status": "ok", "version": "0.1.0", "ai_mode": settings.ai_mode}
     )
 
 
@@ -54,7 +51,7 @@ async def root():
         "name": "Godot-Minds Backend",
         "version": "0.1.0",
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
     }
 
 
@@ -82,12 +79,15 @@ async def shutdown_event():
     """Cleanup resources on shutdown"""
     logger.info("Shutting down Godot-Minds backend server...")
 
+    # Stop WebSocket cleanup task
+    await websocket_router.manager.stop_cleanup_task()
+
     # Close AI service providers
-    if hasattr(ai_router, 'ai_service') and ai_router.ai_service:
+    if hasattr(ai_router, "ai_service") and ai_router.ai_service:
         await ai_router.ai_service.close()
 
     # Stop file watcher
-    if hasattr(watcher_router, 'watcher_service') and watcher_router.watcher_service:
+    if hasattr(watcher_router, "watcher_service") and watcher_router.watcher_service:
         watcher_router.watcher_service.stop()
 
     logger.info("Application shutdown complete")
@@ -99,5 +99,5 @@ if __name__ == "__main__":
         host=settings.host,
         port=settings.port,
         reload=settings.debug,
-        log_level="info"
+        log_level="info",
     )

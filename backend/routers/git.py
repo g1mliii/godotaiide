@@ -1,8 +1,8 @@
 """
 Git router - API endpoints for Git operations
 """
+
 from fastapi import APIRouter, HTTPException, Query
-from typing import List
 import asyncio
 
 from services.git_service import GitService
@@ -10,11 +10,11 @@ from models.git_models import (
     GitStatusResponse,
     GitDiffResponse,
     GitAddRequest,
+    GitRestoreRequest,
     GitCommitRequest,
-    GitCommitResponse,
     GitBranchesResponse,
     GitCheckoutRequest,
-    GitLogResponse
+    GitLogResponse,
 )
 
 router = APIRouter()
@@ -62,23 +62,35 @@ async def add_files(request: GitAddRequest):
 
     try:
         await asyncio.to_thread(git_service.add_files, request.files)
-        return {"status": "ok", "message": f"Staged {len(request.files)} file(s)"}
+        return {"success": True, "message": f"Staged {len(request.files)} file(s)"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/commit", response_model=GitCommitResponse)
+@router.post("/restore")
+async def restore_files(request: GitRestoreRequest):
+    """Unstage files (git restore --staged)"""
+    if git_service is None:
+        raise HTTPException(status_code=500, detail="Git repository not initialized")
+
+    try:
+        await asyncio.to_thread(git_service.unstage_files, request.files)
+        return {"success": True, "message": f"Unstaged {len(request.files)} file(s)"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/commit")
 async def create_commit(request: GitCommitRequest):
     """Create a commit"""
     if git_service is None:
         raise HTTPException(status_code=500, detail="Git repository not initialized")
 
     try:
-        commit_hash = await asyncio.to_thread(git_service.commit, request.message, request.files)
-        return GitCommitResponse(
-            commit_hash=commit_hash,
-            message=request.message
+        commit_hash = await asyncio.to_thread(
+            git_service.commit, request.message, request.files
         )
+        return {"success": True, "message": commit_hash, "commit_hash": commit_hash}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -92,10 +104,7 @@ async def get_branches():
     try:
         branches = await asyncio.to_thread(git_service.get_branches)
         current_branch = next((b.name for b in branches if b.is_current), "")
-        return GitBranchesResponse(
-            branches=branches,
-            current_branch=current_branch
-        )
+        return GitBranchesResponse(branches=branches, current_branch=current_branch)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -107,8 +116,14 @@ async def checkout_branch(request: GitCheckoutRequest):
         raise HTTPException(status_code=500, detail="Git repository not initialized")
 
     try:
-        await asyncio.to_thread(git_service.checkout, request.branch, request.create_new)
-        return {"status": "ok", "branch": request.branch}
+        await asyncio.to_thread(
+            git_service.checkout, request.branch, request.create_new
+        )
+        return {
+            "success": True,
+            "message": f"Checked out branch: {request.branch}",
+            "branch": request.branch,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -1,6 +1,7 @@
 """
 AI router - API endpoints for AI operations
 """
+
 from fastapi import APIRouter, HTTPException
 
 from services.ai_service import AIService
@@ -12,7 +13,7 @@ from models.ai_models import (
     AICompleteRequest,
     AICompleteResponse,
     CommitMessageRequest,
-    CommitMessageResponse
+    CommitMessageResponse,
 )
 
 router = APIRouter()
@@ -37,13 +38,13 @@ async def ask_ai(request: AIAskRequest):
             file_path=request.file_path,
             file_content=request.file_content,
             selection=request.selection,
-            mode=request.mode
+            mode=request.mode,
         )
 
         return AIAskResponse(
             response=result["response"],
             code=result.get("code"),
-            explanation=result.get("explanation")
+            explanation=result.get("explanation"),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -63,12 +64,12 @@ async def chat_with_ai(request: AIChatRequest):
             message=request.message,
             history=history,
             context_files=request.context_files,
-            mode=request.mode
+            mode=request.mode,
         )
 
         return AIChatResponse(
             message=response,
-            code_blocks=None  # TODO: Extract code blocks from response
+            code_blocks=None,  # TODO: Extract code blocks from response
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -86,16 +87,13 @@ async def get_completion(request: AICompleteRequest):
             file_content=request.file_content,
             cursor_line=request.cursor_line,
             cursor_column=request.cursor_column,
-            mode=request.mode
+            mode=request.mode,
         )
 
         # Determine if multi-line completion
         multi_line = "\n" in completion
 
-        return AICompleteResponse(
-            completion=completion,
-            multi_line=multi_line
-        )
+        return AICompleteResponse(completion=completion, multi_line=multi_line)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -108,13 +106,9 @@ async def generate_commit_message(request: CommitMessageRequest):
 
     try:
         message = await ai_service.generate_commit_message(
-            staged_files=request.staged_files,
-            diff_content=request.diff_content
+            staged_files=request.staged_files, diff_content=request.diff_content
         )
 
-        return CommitMessageResponse(
-            message=message,
-            explanation=None
-        )
+        return CommitMessageResponse(message=message, explanation=None)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

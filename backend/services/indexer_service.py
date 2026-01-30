@@ -1,6 +1,7 @@
 """
 Code indexing service using ChromaDB for RAG
 """
+
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 from pathlib import Path
@@ -30,8 +31,14 @@ class CodeIndexer:
             "class": re.compile(r"^class\s+(\w+)\s*:", re.MULTILINE),
         },
         ".cs": {
-            "function": re.compile(r"^\s*(?:public|private|protected|internal)?\s*(?:static)?\s*\w+\s+(\w+)\s*\([^)]*\)", re.MULTILINE),
-            "class": re.compile(r"^\s*(?:public|private|protected|internal)?\s*class\s+(\w+)", re.MULTILINE),
+            "function": re.compile(
+                r"^\s*(?:public|private|protected|internal)?\s*(?:static)?\s*\w+\s+(\w+)\s*\([^)]*\)",
+                re.MULTILINE,
+            ),
+            "class": re.compile(
+                r"^\s*(?:public|private|protected|internal)?\s*class\s+(\w+)",
+                re.MULTILINE,
+            ),
         },
         ".cpp": {
             "function": re.compile(r"^\s*\w+\s+(\w+)\s*\([^)]*\)\s*{", re.MULTILINE),
@@ -52,31 +59,29 @@ class CodeIndexer:
         ".gd": {
             "functions": re.compile(
                 r"^(func\s+(\w+)\s*\([^)]*\):.*?)(?=^func\s+|\Z)",
-                re.MULTILINE | re.DOTALL
+                re.MULTILINE | re.DOTALL,
             ),
             "classes": re.compile(
-                r"^(class\s+(\w+)\s*:.*?)(?=^class\s+|\Z)",
-                re.MULTILINE | re.DOTALL
+                r"^(class\s+(\w+)\s*:.*?)(?=^class\s+|\Z)", re.MULTILINE | re.DOTALL
             ),
         },
         ".py": {
             "functions": re.compile(
                 r"^(def\s+(\w+)\s*\([^)]*\):.*?)(?=^def\s+|^class\s+|\Z)",
-                re.MULTILINE | re.DOTALL
+                re.MULTILINE | re.DOTALL,
             ),
             "classes": re.compile(
-                r"^(class\s+(\w+).*?)(?=^class\s+|\Z)",
-                re.MULTILINE | re.DOTALL
+                r"^(class\s+(\w+).*?)(?=^class\s+|\Z)", re.MULTILINE | re.DOTALL
             ),
         },
         ".cpp": {
             "functions": re.compile(
                 r"^(\w+\s+(\w+)\s*\([^)]*\)\s*\{(?:[^{}]|\{[^{}]*\})*\})",
-                re.MULTILINE | re.DOTALL
+                re.MULTILINE | re.DOTALL,
             ),
             "classes": re.compile(
                 r"^(class\s+(\w+).*?\{(?:[^{}]|\{[^{}]*\})*\};)",
-                re.MULTILINE | re.DOTALL
+                re.MULTILINE | re.DOTALL,
             ),
         },
     }
@@ -94,23 +99,21 @@ class CodeIndexer:
         # Initialize ChromaDB client
         self.client = chromadb.PersistentClient(
             path=str(self.persist_directory),
-            settings=ChromaSettings(
-                anonymized_telemetry=False,
-                allow_reset=True
-            )
+            settings=ChromaSettings(anonymized_telemetry=False, allow_reset=True),
         )
 
         # Get or create collection
         self.collection = self.client.get_or_create_collection(
-            name="code_chunks",
-            metadata={"description": "Code chunks for RAG"}
+            name="code_chunks", metadata={"description": "Code chunks for RAG"}
         )
 
         # File hash cache for incremental indexing
         self._file_hashes: Dict[str, str] = {}
         self._load_file_hashes()
 
-    def index_project(self, project_path: str, force_reindex: bool = False) -> Tuple[int, int]:
+    def index_project(
+        self, project_path: str, force_reindex: bool = False
+    ) -> Tuple[int, int]:
         """
         Index all supported files in a project
 
@@ -125,11 +128,10 @@ class CodeIndexer:
             # Delete collection and recreate it
             try:
                 self.client.delete_collection("code_chunks")
-            except:
+            except Exception:
                 pass
             self.collection = self.client.create_collection(
-                name="code_chunks",
-                metadata={"description": "Code chunks for RAG"}
+                name="code_chunks", metadata={"description": "Code chunks for RAG"}
             )
 
         project_dir = Path(project_path).resolve()
@@ -139,7 +141,10 @@ class CodeIndexer:
         for ext in self.SUPPORTED_EXTENSIONS:
             for file_path in project_dir.rglob(f"*{ext}"):
                 # Skip ignored directories
-                if any(part in [".git", ".godot", ".godot_minds", "addons"] for part in file_path.parts):
+                if any(
+                    part in [".git", ".godot", ".godot_minds", "addons"]
+                    for part in file_path.parts
+                ):
                     continue
 
                 try:
@@ -165,16 +170,20 @@ class CodeIndexer:
             List of chunk dictionaries
         """
         try:
+            # Use read_text for synchronous operations (indexing is already in background)
+            # For async contexts, use aiofiles in the caller
             content = file_path.read_text(encoding="utf-8")
         except Exception as e:
-            print(f"Error reading {file_path}: {e}")
+            logger.error(f"Error reading {file_path}: {e}")
             return []
 
         ext = file_path.suffix
 
         # Use multiline patterns if available for better performance
         if ext in self.MULTILINE_PATTERNS:
-            return self._process_file_content_multiline(content, file_path, project_root)
+            return self._process_file_content_multiline(
+                content, file_path, project_root
+            )
 
         # Fallback to line-by-line processing
         relative_path = str(file_path.relative_to(project_root))
@@ -204,7 +213,7 @@ class CodeIndexer:
                         "chunk_type": "function",
                         "name": match.group(1),
                         "line_start": i + 1,
-                        "lines": [line]
+                        "lines": [line],
                     }
                     current_lines = [line]
                     continue
@@ -223,7 +232,7 @@ class CodeIndexer:
                         "chunk_type": "class",
                         "name": match.group(1),
                         "line_start": i + 1,
-                        "lines": [line]
+                        "lines": [line],
                     }
                     current_lines = [line]
                     continue
@@ -233,7 +242,9 @@ class CodeIndexer:
                 current_lines.append(line)
 
                 # End chunk on empty line or significant indentation decrease (heuristic)
-                if not line.strip() or (len(current_lines) > 5 and not line.startswith((" ", "\t"))):
+                if not line.strip() or (
+                    len(current_lines) > 5 and not line.startswith((" ", "\t"))
+                ):
                     current_chunk["content"] = "\n".join(current_lines)
                     current_chunk["line_end"] = i + 1
                     chunks.append(current_chunk)
@@ -248,14 +259,16 @@ class CodeIndexer:
 
         # If no chunks found, index entire file
         if not chunks:
-            chunks.append({
-                "file_path": relative_path,
-                "chunk_type": "file",
-                "name": file_path.name,
-                "line_start": 1,
-                "line_end": len(lines),
-                "content": content
-            })
+            chunks.append(
+                {
+                    "file_path": relative_path,
+                    "chunk_type": "file",
+                    "name": file_path.name,
+                    "line_start": 1,
+                    "line_end": len(lines),
+                    "content": content,
+                }
+            )
 
         return chunks
 
@@ -280,23 +293,23 @@ class CodeIndexer:
             ).hexdigest()
 
             documents.append(chunk["content"])
-            metadatas.append({
-                "file_path": chunk["file_path"],
-                "chunk_type": chunk["chunk_type"],
-                "name": chunk.get("name", ""),
-                "line_start": chunk["line_start"],
-                "line_end": chunk["line_end"]
-            })
+            metadatas.append(
+                {
+                    "file_path": chunk["file_path"],
+                    "chunk_type": chunk["chunk_type"],
+                    "name": chunk.get("name", ""),
+                    "line_start": chunk["line_start"],
+                    "line_end": chunk["line_end"],
+                }
+            )
             ids.append(chunk_id)
 
         # Add to collection
-        self.collection.add(
-            documents=documents,
-            metadatas=metadatas,
-            ids=ids
-        )
+        self.collection.add(documents=documents, metadatas=metadatas, ids=ids)
 
-    def search(self, query: str, max_results: int = 5, file_types: Optional[List[str]] = None) -> List[CodeChunk]:
+    def search(
+        self, query: str, max_results: int = 5, file_types: Optional[List[str]] = None
+    ) -> List[CodeChunk]:
         """
         Search for code chunks matching a query
 
@@ -316,46 +329,67 @@ class CodeIndexer:
             pass
 
         # Query collection
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=max_results
-        )
+        results = self.collection.query(query_texts=[query], n_results=max_results)
 
         # Convert to CodeChunk objects
         chunks = []
         if results["documents"]:
             for i in range(len(results["documents"][0])):
                 metadata = results["metadatas"][0][i]
-                chunks.append(CodeChunk(
-                    file_path=metadata["file_path"],
-                    content=results["documents"][0][i],
-                    chunk_type=metadata["chunk_type"],
-                    name=metadata.get("name"),
-                    line_start=metadata.get("line_start"),
-                    line_end=metadata.get("line_end"),
-                    similarity_score=1.0 - results["distances"][0][i]  # Convert distance to similarity
-                ))
+                chunks.append(
+                    CodeChunk(
+                        file_path=metadata["file_path"],
+                        content=results["documents"][0][i],
+                        chunk_type=metadata["chunk_type"],
+                        name=metadata.get("name"),
+                        line_start=metadata.get("line_start"),
+                        line_end=metadata.get("line_end"),
+                        similarity_score=1.0
+                        - results["distances"][0][i],  # Convert distance to similarity
+                    )
+                )
 
         return chunks
+
+
+    def remove_file(self, file_path: Path, project_root: Path) -> None:
+        """
+        Remove a file from the index
+
+        Args:
+            file_path: Path to the file
+            project_root: Root directory of the project
+        """
+        try:
+            relative_path = str(file_path.relative_to(project_root))
+            
+            # Delete from ChromaDB using metadata filter
+            self.collection.delete(where={"file_path": relative_path})
+            
+            # Remove from hash cache
+            if relative_path in self._file_hashes:
+                del self._file_hashes[relative_path]
+                self._save_file_hashes()
+                
+            logger.info(f"Removed file from index: {relative_path}")
+            
+        except Exception as e:
+            logger.error(f"Error removing file {file_path}: {e}")
 
     def clear_index(self) -> None:
         """Clear all indexed data"""
         try:
             self.client.delete_collection("code_chunks")
-        except:
+        except Exception:
             pass
         self.collection = self.client.create_collection(
-            name="code_chunks",
-            metadata={"description": "Code chunks for RAG"}
+            name="code_chunks", metadata={"description": "Code chunks for RAG"}
         )
 
     def get_stats(self) -> Dict:
         """Get indexing statistics"""
         count = self.collection.count()
-        return {
-            "total_chunks": count,
-            "persist_directory": str(self.persist_directory)
-        }
+        return {"total_chunks": count, "persist_directory": str(self.persist_directory)}
 
     def _load_file_hashes(self):
         """Load file hash cache from disk"""
@@ -385,10 +419,7 @@ class CodeIndexer:
         return hasher.hexdigest()
 
     def _find_files(
-        self,
-        project_dir: Path,
-        extensions: set,
-        max_files: int = 10000
+        self, project_dir: Path, extensions: set, max_files: int = 10000
     ) -> List[Path]:
         """
         Find files with limit to prevent runaway searches
@@ -405,7 +436,10 @@ class CodeIndexer:
         for ext in extensions:
             for file_path in project_dir.rglob(f"*{ext}"):
                 # Skip ignored directories
-                if any(part in [".git", ".godot", ".godot_minds", "addons"] for part in file_path.parts):
+                if any(
+                    part in [".git", ".godot", ".godot_minds", "addons"]
+                    for part in file_path.parts
+                ):
                     continue
 
                 all_files.append(file_path)
@@ -414,7 +448,9 @@ class CodeIndexer:
                     return all_files
         return all_files
 
-    async def _chunk_file_async(self, file_path: Path, project_root: Path) -> List[Dict]:
+    async def _chunk_file_async(
+        self, file_path: Path, project_root: Path
+    ) -> List[Dict]:
         """
         Async version of _chunk_file
 
@@ -435,11 +471,15 @@ class CodeIndexer:
         # CPU-bound processing - use multiline if available for better performance
         ext = file_path.suffix
         if ext in self.MULTILINE_PATTERNS:
-            return self._process_file_content_multiline(content, file_path, project_root)
+            return self._process_file_content_multiline(
+                content, file_path, project_root
+            )
         else:
             return self._process_file_content(content, file_path, project_root)
 
-    def _process_file_content_multiline(self, content: str, file_path: Path, project_root: Path) -> List[Dict]:
+    def _process_file_content_multiline(
+        self, content: str, file_path: Path, project_root: Path
+    ) -> List[Dict]:
         """
         Process file content using multiline regex for better performance
 
@@ -468,18 +508,20 @@ class CodeIndexer:
 
                 # Calculate line numbers
                 start_pos = match.start(1)
-                line_start = content[:start_pos].count('\n') + 1
-                line_end = line_start + function_content.count('\n')
+                line_start = content[:start_pos].count("\n") + 1
+                line_end = line_start + function_content.count("\n")
 
-                chunks.append({
-                    "file_path": relative_path,
-                    "chunk_type": "function",
-                    "name": function_name,
-                    "line_start": line_start,
-                    "line_end": line_end,
-                    "content": function_content.strip(),
-                    "lines": []  # Not needed with multiline
-                })
+                chunks.append(
+                    {
+                        "file_path": relative_path,
+                        "chunk_type": "function",
+                        "name": function_name,
+                        "line_start": line_start,
+                        "line_end": line_end,
+                        "content": function_content.strip(),
+                        "lines": [],  # Not needed with multiline
+                    }
+                )
 
         # Find all classes at once using multiline regex
         if "classes" in patterns:
@@ -489,33 +531,39 @@ class CodeIndexer:
 
                 # Calculate line numbers
                 start_pos = match.start(1)
-                line_start = content[:start_pos].count('\n') + 1
-                line_end = line_start + class_content.count('\n')
+                line_start = content[:start_pos].count("\n") + 1
+                line_end = line_start + class_content.count("\n")
 
-                chunks.append({
-                    "file_path": relative_path,
-                    "chunk_type": "class",
-                    "name": class_name,
-                    "line_start": line_start,
-                    "line_end": line_end,
-                    "content": class_content.strip(),
-                    "lines": []  # Not needed with multiline
-                })
+                chunks.append(
+                    {
+                        "file_path": relative_path,
+                        "chunk_type": "class",
+                        "name": class_name,
+                        "line_start": line_start,
+                        "line_end": line_end,
+                        "content": class_content.strip(),
+                        "lines": [],  # Not needed with multiline
+                    }
+                )
 
         # If no chunks found, index entire file
         if not chunks:
-            chunks.append({
-                "file_path": relative_path,
-                "chunk_type": "file",
-                "name": file_path.name,
-                "line_start": 1,
-                "line_end": len(lines),
-                "content": content
-            })
+            chunks.append(
+                {
+                    "file_path": relative_path,
+                    "chunk_type": "file",
+                    "name": file_path.name,
+                    "line_start": 1,
+                    "line_end": len(lines),
+                    "content": content,
+                }
+            )
 
         return chunks
 
-    def _process_file_content(self, content: str, file_path: Path, project_root: Path) -> List[Dict]:
+    def _process_file_content(
+        self, content: str, file_path: Path, project_root: Path
+    ) -> List[Dict]:
         """
         Process file content into chunks (CPU-bound, called from async)
 
@@ -555,7 +603,7 @@ class CodeIndexer:
                         "chunk_type": "function",
                         "name": match.group(1),
                         "line_start": i + 1,
-                        "lines": [line]
+                        "lines": [line],
                     }
                     current_lines = [line]
                     continue
@@ -574,7 +622,7 @@ class CodeIndexer:
                         "chunk_type": "class",
                         "name": match.group(1),
                         "line_start": i + 1,
-                        "lines": [line]
+                        "lines": [line],
                     }
                     current_lines = [line]
                     continue
@@ -584,7 +632,9 @@ class CodeIndexer:
                 current_lines.append(line)
 
                 # End chunk on empty line or significant indentation decrease (heuristic)
-                if not line.strip() or (len(current_lines) > 5 and not line.startswith((" ", "\t"))):
+                if not line.strip() or (
+                    len(current_lines) > 5 and not line.startswith((" ", "\t"))
+                ):
                     current_chunk["content"] = "\n".join(current_lines)
                     current_chunk["line_end"] = i + 1
                     chunks.append(current_chunk)
@@ -599,14 +649,16 @@ class CodeIndexer:
 
         # If no chunks found, index entire file
         if not chunks:
-            chunks.append({
-                "file_path": relative_path,
-                "chunk_type": "file",
-                "name": file_path.name,
-                "line_start": 1,
-                "line_end": len(lines),
-                "content": content
-            })
+            chunks.append(
+                {
+                    "file_path": relative_path,
+                    "chunk_type": "file",
+                    "name": file_path.name,
+                    "line_start": 1,
+                    "line_end": len(lines),
+                    "content": content,
+                }
+            )
 
         return chunks
 
@@ -615,7 +667,7 @@ class CodeIndexer:
         project_path: str,
         force_reindex: bool = False,
         incremental: bool = True,
-        max_files: int = 10000
+        max_files: int = 10000,
     ) -> Tuple[int, int]:
         """
         Async version of index_project with incremental support
@@ -633,11 +685,10 @@ class CodeIndexer:
             # Delete collection and recreate it
             try:
                 self.client.delete_collection("code_chunks")
-            except:
+            except Exception:
                 pass
             self.collection = self.client.create_collection(
-                name="code_chunks",
-                metadata={"description": "Code chunks for RAG"}
+                name="code_chunks", metadata={"description": "Code chunks for RAG"}
             )
             self._file_hashes.clear()
 

@@ -1,10 +1,13 @@
 """
 File watcher service using Watchdog to monitor code changes
 """
+
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileCreatedEvent, FileDeletedEvent
+from watchdog.events import (
+    FileSystemEventHandler,
+)
 from pathlib import Path
-from typing import Callable, Optional, Set, Awaitable
+from typing import Callable, Optional, Awaitable
 import time
 import threading
 import asyncio
@@ -37,6 +40,7 @@ class CodeFileHandler(FileSystemEventHandler):
         self.pending_changes: OrderedDict[str, float] = OrderedDict()
         self.max_pending = 1000  # Limit to prevent unbounded growth
         self.lock = threading.Lock()
+        self.change_event = threading.Event()
 
         # Callback for broadcasting changes via WebSocket (async)
         self.broadcast_callback: Optional[Callable[[dict], Awaitable[None]]] = None
@@ -44,7 +48,9 @@ class CodeFileHandler(FileSystemEventHandler):
 
         # Start debounce processor thread
         self.running = True
-        self.processor_thread = threading.Thread(target=self._process_pending_changes, daemon=True)
+        self.processor_thread = threading.Thread(
+            target=self._process_pending_changes, daemon=True
+        )
         self.processor_thread.start()
 
     def set_broadcast_callback(self, callback: Callable):
@@ -76,9 +82,14 @@ class CodeFileHandler(FileSystemEventHandler):
 
         file_path = Path(event.src_path)
         if self._should_process_file(file_path):
-            # For deletions, we should remove from index immediately
-            # This is a simplified version - in production you'd want to track document IDs
-            pass
+            # Find project root (simplified for this implementation)
+            project_root = file_path.parent
+            while project_root.parent != project_root:
+                if (project_root / ".git").exists():
+                    break
+                project_root = project_root.parent
+            
+            self.indexer.remove_file(file_path, project_root)
 
     def _should_process_file(self, file_path: Path) -> bool:
         """
@@ -116,6 +127,7 @@ class CodeFileHandler(FileSystemEventHandler):
             else:
                 # Add new
                 self.pending_changes[file_path] = time.time()
+                self.change_event.set()
 
                 # Evict oldest if over limit
                 if len(self.pending_changes) > self.max_pending:
@@ -125,7 +137,15 @@ class CodeFileHandler(FileSystemEventHandler):
     def _process_pending_changes(self):
         """Background thread to process pending changes with debouncing"""
         while self.running:
-            time.sleep(0.1)  # Check every 100ms
+            # Wait for changes or timeout (to allow checking self.running)
+            # using a timeout allows us to check self.running periodically even if no events
+            if not self.pending_changes:
+                self.change_event.wait(timeout=1.0)
+                if not self.running:
+                    break
+                self.change_event.clear()
+            else:
+                time.sleep(0.1)  # Check every 100ms when we have pending changes for debounce
 
             current_time = time.time()
             files_to_process = []
@@ -164,23 +184,26 @@ class CodeFileHandler(FileSystemEventHandler):
 
             # Reindex the file
             chunks = self.indexer._chunk_file(path, project_root)
-            if chunks:
-                self.indexer._add_chunks_to_index(chunks)
-                logger.info(f"Reindexed: {file_path} ({len(chunks)} chunks)")
+            if not chunks:
+                return
 
-                # Broadcast change via WebSocket if callback is set
-                if self.broadcast_callback and self._loop:
-                    message = {
-                        "type": "file_indexed",
-                        "path": str(path.relative_to(project_root)),
-                        "chunks": len(chunks),
-                        "timestamp": datetime.now().isoformat()
-                    }
-                    # Schedule the coroutine in the event loop
-                    asyncio.run_coroutine_threadsafe(
-                        self.broadcast_callback(message),
-                        self._loop
-                    )
+            self.indexer._add_chunks_to_index(chunks)
+            logger.info(f"Reindexed: {file_path} ({len(chunks)} chunks)")
+
+            # Broadcast change via WebSocket if callback is set
+            if not (self.broadcast_callback and self._loop):
+                return
+
+            message = {
+                "type": "file_indexed",
+                "path": str(path.relative_to(project_root)),
+                "chunks": len(chunks),
+                "timestamp": datetime.now().isoformat(),
+            }
+            # Schedule the coroutine in the event loop
+            asyncio.run_coroutine_threadsafe(
+                self.broadcast_callback(message), self._loop
+            )
 
         except Exception as e:
             logger.error(f"Error reindexing {file_path}: {e}", exc_info=True)
@@ -189,6 +212,7 @@ class CodeFileHandler(FileSystemEventHandler):
         """Stop the processor thread"""
         if self.running:
             self.running = False
+            self.change_event.set()  # Wake up thread so it can exit
             if self.processor_thread and self.processor_thread.is_alive():
                 self.processor_thread.join(timeout=5)
                 if self.processor_thread.is_alive():
@@ -218,7 +242,9 @@ class FileWatcherService:
         self.watching = False
         self.watched_path: Optional[Path] = None
 
-    async def start_watching(self, path: str, callback: Optional[Callable] = None) -> None:
+    async def start_watching(
+        self, path: str, callback: Optional[Callable] = None
+    ) -> None:
         """
         Start watching a directory for changes
 
@@ -232,6 +258,9 @@ class FileWatcherService:
         watch_path = Path(path).resolve()
         if not watch_path.exists():
             raise ValueError(f"Path does not exist: {path}")
+
+        # Create a new Observer instance (observers can't be restarted after stop)
+        self.observer = Observer()
 
         # Store event loop reference for async callback
         self.handler._loop = asyncio.get_event_loop()
@@ -269,5 +298,5 @@ class FileWatcherService:
             "watching": self.watching,
             "path": str(self.watched_path) if self.watched_path else None,
             "extensions": settings.watch_extensions,
-            "ignored_directories": settings.ignore_directories
+            "ignored_directories": settings.ignore_directories,
         }

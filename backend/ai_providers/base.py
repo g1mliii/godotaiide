@@ -1,6 +1,7 @@
 """
 Base class for AI providers
 """
+
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, AsyncIterator
 
@@ -28,7 +29,7 @@ class AIProvider(ABC):
         self,
         prompt: str,
         context: Optional[str] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
     ) -> str:
         """
         Ask AI a question with optional context
@@ -45,9 +46,7 @@ class AIProvider(ABC):
 
     @abstractmethod
     async def chat(
-        self,
-        messages: List[Dict[str, str]],
-        system_prompt: Optional[str] = None
+        self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None
     ) -> str:
         """
         Have a conversation with AI
@@ -62,12 +61,7 @@ class AIProvider(ABC):
         pass
 
     @abstractmethod
-    async def complete(
-        self,
-        code_before: str,
-        code_after: str,
-        language: str
-    ) -> str:
+    async def complete(self, code_before: str, code_after: str, language: str) -> str:
         """
         Get code completion
 
@@ -83,9 +77,7 @@ class AIProvider(ABC):
 
     @abstractmethod
     async def stream_response(
-        self,
-        prompt: str,
-        context: Optional[str] = None
+        self, prompt: str, context: Optional[str] = None
     ) -> AsyncIterator[str]:
         """
         Stream AI response token by token

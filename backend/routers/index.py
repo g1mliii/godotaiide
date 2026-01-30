@@ -1,16 +1,12 @@
 """
 Index router - API endpoints for code indexing and search
 """
+
 from fastapi import APIRouter, HTTPException
 from typing import List
 
 from services.indexer_service import CodeIndexer
-from models.index_models import (
-    IndexRequest,
-    IndexResponse,
-    SearchResponse,
-    CodeChunk
-)
+from models.index_models import IndexRequest, IndexResponse, SearchResponse
 
 router = APIRouter()
 
@@ -30,15 +26,14 @@ async def index_project(request: IndexRequest):
 
     try:
         files_indexed, chunks_created = indexer.index_project(
-            request.project_path,
-            request.force_reindex
+            request.project_path, request.force_reindex
         )
 
         return IndexResponse(
             status="success",
             files_indexed=files_indexed,
             chunks_created=chunks_created,
-            message=f"Indexed {files_indexed} files with {chunks_created} code chunks"
+            message=f"Indexed {files_indexed} files with {chunks_created} code chunks",
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -53,11 +48,7 @@ async def search_code(query: str, max_results: int = 5, file_types: List[str] = 
     try:
         results = indexer.search(query, max_results, file_types)
 
-        return SearchResponse(
-            query=query,
-            results=results,
-            total_results=len(results)
-        )
+        return SearchResponse(query=query, results=results, total_results=len(results))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

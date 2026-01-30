@@ -1,6 +1,7 @@
 """
 Ollama provider for local AI models
 """
+
 from typing import List, Dict, Optional, AsyncIterator
 import httpx
 
@@ -28,7 +29,7 @@ class OllamaProvider(AIProvider):
         self,
         prompt: str,
         context: Optional[str] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
     ) -> str:
         """Ask AI a question with optional context"""
 
@@ -36,19 +37,14 @@ class OllamaProvider(AIProvider):
         if context:
             full_prompt = f"Context:\n```\n{context}\n```\n\n{prompt}"
 
-        payload = {
-            "model": self.model,
-            "prompt": full_prompt,
-            "stream": False
-        }
+        payload = {"model": self.model, "prompt": full_prompt, "stream": False}
 
         if system_prompt:
             payload["system"] = system_prompt
 
         try:
             response = await self.client.post(
-                f"{self.base_url}/api/generate",
-                json=payload
+                f"{self.base_url}/api/generate", json=payload
             )
             response.raise_for_status()
             return response.json()["response"]
@@ -56,34 +52,20 @@ class OllamaProvider(AIProvider):
             raise Exception(f"Ollama request failed: {e}")
 
     async def chat(
-        self,
-        messages: List[Dict[str, str]],
-        system_prompt: Optional[str] = None
+        self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None
     ) -> str:
         """Have a conversation with AI"""
 
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False
-        }
+        payload = {"model": self.model, "messages": messages, "stream": False}
 
         try:
-            response = await self.client.post(
-                f"{self.base_url}/api/chat",
-                json=payload
-            )
+            response = await self.client.post(f"{self.base_url}/api/chat", json=payload)
             response.raise_for_status()
             return response.json()["message"]["content"]
         except Exception as e:
             raise Exception(f"Ollama chat request failed: {e}")
 
-    async def complete(
-        self,
-        code_before: str,
-        code_after: str,
-        language: str
-    ) -> str:
+    async def complete(self, code_before: str, code_after: str, language: str) -> str:
         """Get code completion"""
 
         prompt = f"""<PRE> {code_before} <SUF>{code_after} <MID>"""
@@ -92,16 +74,12 @@ class OllamaProvider(AIProvider):
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "options": {
-                "temperature": 0.2,
-                "stop": ["<MID>", "</s>"]
-            }
+            "options": {"temperature": 0.2, "stop": ["<MID>", "</s>"]},
         }
 
         try:
             response = await self.client.post(
-                f"{self.base_url}/api/generate",
-                json=payload
+                f"{self.base_url}/api/generate", json=payload
             )
             response.raise_for_status()
             return response.json()["response"]
@@ -109,9 +87,7 @@ class OllamaProvider(AIProvider):
             raise Exception(f"Ollama completion failed: {e}")
 
     async def stream_response(
-        self,
-        prompt: str,
-        context: Optional[str] = None
+        self, prompt: str, context: Optional[str] = None
     ) -> AsyncIterator[str]:
         """Stream AI response token by token"""
 
@@ -119,22 +95,17 @@ class OllamaProvider(AIProvider):
         if context:
             full_prompt = f"Context:\n```\n{context}\n```\n\n{prompt}"
 
-        payload = {
-            "model": self.model,
-            "prompt": full_prompt,
-            "stream": True
-        }
+        payload = {"model": self.model, "prompt": full_prompt, "stream": True}
 
         try:
             async with self.client.stream(
-                "POST",
-                f"{self.base_url}/api/generate",
-                json=payload
+                "POST", f"{self.base_url}/api/generate", json=payload
             ) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if line:
                         import json
+
                         data = json.loads(line)
                         if "response" in data:
                             yield data["response"]

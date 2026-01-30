@@ -1,0 +1,112 @@
+[gd_scene load_steps=2 format=3 uid="uid://c2xp1y3q4r5s6"]
+
+[ext_resource type="Script" path="res://addons/godot_minds/scripts/source_control_dock.gd" id="1_abcde"]
+
+[node name="SourceControlDock" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_abcde")
+
+[node name="MainContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Toolbar" type="HBoxContainer" parent="MainContainer"]
+layout_mode = 2
+
+[node name="RefreshButton" type="Button" parent="MainContainer/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Refresh status (F5)"
+text = "Refresh"
+
+[node name="VSeparator" type="VSeparator" parent="MainContainer/Toolbar"]
+layout_mode = 2
+
+[node name="BranchLabel" type="Label" parent="MainContainer/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Branch: main"
+
+[node name="AIMessageButton" type="Button" parent="MainContainer/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Generate AI commit message (Ctrl+G)"
+text = "AI Message"
+
+[node name="CommitPanel" type="PanelContainer" parent="MainContainer"]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="MainContainer/CommitPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MainContainer/CommitPanel/MarginContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MainContainer/CommitPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "Commit Message:"
+
+[node name="CommitMessageEdit" type="TextEdit" parent="MainContainer/CommitPanel/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+placeholder_text = "Enter commit message (Ctrl+Enter to commit)"
+wrap_mode = 1
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MainContainer/CommitPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Spacer" type="Control" parent="MainContainer/CommitPanel/MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CommitButton" type="Button" parent="MainContainer/CommitPanel/MarginContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Commit"
+
+[node name="HSeparator" type="HSeparator" parent="MainContainer"]
+layout_mode = 2
+
+[node name="FileListHeader" type="HBoxContainer" parent="MainContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MainContainer/FileListHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Changes"
+vertical_alignment = 1
+
+[node name="FileCountLabel" type="Label" parent="MainContainer/FileListHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0 files"
+vertical_alignment = 1
+
+[node name="FileTree" type="Tree" parent="MainContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 3
+columns = 2
+hide_root = true
+
+[node name="PollingTimer" type="Timer" parent="."]
+unique_name_in_owner = true
+wait_time = 2.0
+autostart = false

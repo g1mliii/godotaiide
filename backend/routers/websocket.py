@@ -1,9 +1,9 @@
 """
 WebSocket router - Real-time communication for streaming AI and file changes
 """
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict, Set, Optional
-import json
 import asyncio
 import time
 import logging
@@ -33,25 +33,45 @@ class ConnectionManager:
         self._connection_last_seen: Dict[WebSocket, float] = {}
         self._cleanup_task: Optional[asyncio.Task] = None
         self._connection_timeout = 300  # 5 minute timeout
+        self._shutdown = False
 
     async def start_cleanup_task(self):
         """Start background task to cleanup stale connections"""
+        self._shutdown = False
         if self._cleanup_task is None or self._cleanup_task.done():
             self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
+    async def stop_cleanup_task(self):
+        """Stop the cleanup task gracefully"""
+        self._shutdown = True
+        if self._cleanup_task and not self._cleanup_task.done():
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+            self._cleanup_task = None
+
     async def _cleanup_loop(self):
         """Background loop to cleanup stale connections"""
-        while True:
+        while not self._shutdown:
             try:
                 await asyncio.sleep(30)  # Check every 30 seconds
+                if self._shutdown:
+                    break
                 now = time.time()
                 stale = [
-                    ws for ws, last_seen in self._connection_last_seen.items()
+                    ws
+                    for ws, last_seen in self._connection_last_seen.items()
                     if now - last_seen > self._connection_timeout
                 ]
                 for ws in stale:
-                    logger.warning(f"Cleaning up stale WebSocket connection (idle {int(now - self._connection_last_seen[ws])}s)")
+                    logger.warning(
+                        f"Cleaning up stale WebSocket connection (idle {int(now - self._connection_last_seen[ws])}s)"
+                    )
                     self.disconnect(ws)
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.error(f"Error in WebSocket cleanup loop: {e}", exc_info=True)
 
@@ -89,7 +109,7 @@ class ConnectionManager:
         # Send to all connections in parallel
         await asyncio.gather(
             *[self.send_message(ws, message) for ws in self.active_connections.copy()],
-            return_exceptions=True
+            return_exceptions=True,
         )
 
 
@@ -129,10 +149,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({"type": "pong"})
 
             else:
-                await websocket.send_json({
-                    "type": "error",
-                    "message": f"Unknown message type: {message_type}"
-                })
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "message": f"Unknown message type: {message_type}",
+                    }
+                )
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -144,10 +166,9 @@ async def websocket_endpoint(websocket: WebSocket):
 async def handle_ai_stream(websocket: WebSocket, data: Dict):
     """Handle streaming AI request"""
     if ai_service is None:
-        await websocket.send_json({
-            "type": "error",
-            "message": "AI service not initialized"
-        })
+        await websocket.send_json(
+            {"type": "error", "message": "AI service not initialized"}
+        )
         return
 
     try:
@@ -157,40 +178,34 @@ async def handle_ai_stream(websocket: WebSocket, data: Dict):
         # Get provider and stream response
         provider = ai_service._get_provider()
 
-        await websocket.send_json({
-            "type": "ai_stream_start",
-            "message": "Starting AI response..."
-        })
+        await websocket.send_json(
+            {"type": "ai_stream_start", "message": "Starting AI response..."}
+        )
 
         # Stream tokens
         full_response = ""
         async for token in provider.stream_response(prompt, context):
             full_response += token
-            await websocket.send_json({
-                "type": "ai_stream",
-                "token": token,
-                "accumulated": full_response
-            })
+            await websocket.send_json(
+                {"type": "ai_stream", "token": token, "accumulated": full_response}
+            )
 
-        await websocket.send_json({
-            "type": "ai_stream_end",
-            "full_response": full_response
-        })
+        await websocket.send_json(
+            {"type": "ai_stream_end", "full_response": full_response}
+        )
 
     except Exception as e:
-        await websocket.send_json({
-            "type": "error",
-            "message": f"AI streaming failed: {str(e)}"
-        })
+        await websocket.send_json(
+            {"type": "error", "message": f"AI streaming failed: {str(e)}"}
+        )
 
 
 async def handle_completion(websocket: WebSocket, data: Dict):
     """Handle inline completion request"""
     if ai_service is None:
-        await websocket.send_json({
-            "type": "error",
-            "message": "AI service not initialized"
-        })
+        await websocket.send_json(
+            {"type": "error", "message": "AI service not initialized"}
+        )
         return
 
     try:
@@ -203,20 +218,21 @@ async def handle_completion(websocket: WebSocket, data: Dict):
             file_path=file_path,
             file_content=file_content,
             cursor_line=cursor_line,
-            cursor_column=cursor_column
+            cursor_column=cursor_column,
         )
 
-        await websocket.send_json({
-            "type": "completion_suggestion",
-            "completion": completion,
-            "multi_line": "\n" in completion
-        })
+        await websocket.send_json(
+            {
+                "type": "completion_suggestion",
+                "completion": completion,
+                "multi_line": "\n" in completion,
+            }
+        )
 
     except Exception as e:
-        await websocket.send_json({
-            "type": "error",
-            "message": f"Completion failed: {str(e)}"
-        })
+        await websocket.send_json(
+            {"type": "error", "message": f"Completion failed: {str(e)}"}
+        )
 
 
 async def broadcast_file_change(file_path: str, chunks_updated: int):
@@ -225,16 +241,20 @@ async def broadcast_file_change(file_path: str, chunks_updated: int):
 
     This can be called by the file watcher service
     """
-    await manager.broadcast({
-        "type": "file_changed",
-        "file_path": file_path,
-        "chunks_updated": chunks_updated
-    })
+    await manager.broadcast(
+        {
+            "type": "file_changed",
+            "file_path": file_path,
+            "chunks_updated": chunks_updated,
+        }
+    )
 
 
 # Export function to be used by watcher service
 def get_broadcast_callback():
     """Get callback function for file watcher to broadcast changes"""
+
     async def callback(data: Dict):
         await manager.broadcast(data)
+
     return callback

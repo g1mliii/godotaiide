@@ -20,7 +20,15 @@
       "Bash(taskkill //F //PID 28640)",
       "Bash(for pid in 2280 16340 28640)",
       "Bash(taskkill:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(test:*)",
+      "Bash(pytest:*)",
+      "Bash(pip show:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(ls:*)",
+      "Bash(git restore:*)",
+      "Bash(wc:*)"
     ]
   }
 }

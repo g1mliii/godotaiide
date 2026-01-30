@@ -322,7 +322,7 @@ class CodeIndexer:
             List of CodeChunk objects
         """
         # Build filter
-        where = None
+        _where = None
         if file_types:
             # This is a simplified filter - ChromaDB filtering is limited
             # In production, you might want to filter results post-query

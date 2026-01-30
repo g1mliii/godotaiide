@@ -572,7 +572,8 @@ func _validate_commit_message() -> bool:
 	# Check length AFTER stripping to prevent whitespace-padded short messages
 	var min_len := MIN_COMMIT_MESSAGE_LENGTH
 	if message.length() < min_len:
-		_show_alert("Commit message too short (minimum %d characters)" % MIN_COMMIT_MESSAGE_LENGTH, "Invalid Message")
+		var alert_msg := "Commit message too short (minimum %d characters)"
+		_show_alert(alert_msg % min_len, "Invalid Message")
 		commit_message_edit.grab_focus()
 		return false
 

@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(pip install:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill /F /PID 27356)",
+      "Bash(taskkill //F //PID 27356)",
+      "Bash(python:*)",
+      "Bash(taskkill //F //PID 30552)",
+      "Bash(pkill:*)",
+      "Bash(for pid in 30552 16924 27356 21480)",
+      "Bash(do taskkill //F //PID $pid)",
+      "Bash(done)",
+      "Bash(for pid in 12988 15964 16924 21480 27356 30552)",
+      "Bash(xargs:*)",
+      "Bash(git add:*)",
+      "Bash(for pid in 20820 24028)",
+      "Bash(taskkill //F //PID 28640)",
+      "Bash(for pid in 2280 16340 28640)",
+      "Bash(taskkill:*)",
+      "Bash(grep:*)"
+    ]
+  }
+}

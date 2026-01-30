@@ -37,10 +37,9 @@ class AIService:
         )
 
         # Initialize indexer if not provided
+        self._indexer: Optional[CodeIndexer] = None
         if not indexer_service:
             self._indexer = CodeIndexer()
-        else:
-            self._indexer = None
 
         # Initialize git service if not provided
         if not git_service:
@@ -171,8 +170,8 @@ class AIService:
         # Parse response (simplified - in production, you'd extract code blocks)
         return {
             "response": response,
-            "code": None,  # TODO: Extract code from response
-            "explanation": None,
+            "code": "",  # TODO: Extract code from response
+            "explanation": "",
         }
 
     async def chat(

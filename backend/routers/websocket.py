@@ -19,7 +19,7 @@ active_connections: Set[WebSocket] = set()
 
 # Initialize AI service for streaming
 try:
-    ai_service = AIService()
+    ai_service: Optional[AIService] = AIService()
 except Exception as e:
     ai_service = None
     print(f"Warning: Could not initialize AIService for WebSocket: {e}")
@@ -28,20 +28,20 @@ except Exception as e:
 class ConnectionManager:
     """Manage WebSocket connections with automatic cleanup"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.active_connections: Set[WebSocket] = set()
         self._connection_last_seen: Dict[WebSocket, float] = {}
         self._cleanup_task: Optional[asyncio.Task] = None
         self._connection_timeout = 300  # 5 minute timeout
         self._shutdown = False
 
-    async def start_cleanup_task(self):
+    async def start_cleanup_task(self) -> None:
         """Start background task to cleanup stale connections"""
         self._shutdown = False
         if self._cleanup_task is None or self._cleanup_task.done():
             self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
-    async def stop_cleanup_task(self):
+    async def stop_cleanup_task(self) -> None:
         """Stop the cleanup task gracefully"""
         self._shutdown = True
         if self._cleanup_task and not self._cleanup_task.done():

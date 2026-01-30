@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class OpenCodeProvider(AIProvider):
     """Provider for OpenCode CLI (uses existing AI subscriptions)"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Initialize OpenCode provider
 

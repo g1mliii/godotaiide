@@ -3,6 +3,7 @@ AI router - API endpoints for AI operations
 """
 
 from fastapi import APIRouter, HTTPException
+from typing import Optional
 
 from services.ai_service import AIService
 from models.ai_models import (
@@ -20,7 +21,7 @@ router = APIRouter()
 
 # Initialize AI service
 try:
-    ai_service = AIService()
+    ai_service: Optional[AIService] = AIService()
 except Exception as e:
     ai_service = None
     print(f"Warning: Could not initialize AIService: {e}")

@@ -76,7 +76,7 @@ class AIProvider(ABC):
         pass
 
     @abstractmethod
-    async def stream_response(
+    def stream_response(
         self, prompt: str, context: Optional[str] = None
     ) -> AsyncIterator[str]:
         """
@@ -89,4 +89,6 @@ class AIProvider(ABC):
         Yields:
             Response tokens
         """
-        pass
+        # This is an async generator, implementations should use 'async def'
+        # but the abstract signature should not have 'async' to avoid mypy issues
+        ...

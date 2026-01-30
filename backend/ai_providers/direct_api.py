@@ -2,7 +2,7 @@
 Direct API provider implementation for Claude, GPT-4, and Gemini
 """
 
-from typing import List, Dict, Optional, AsyncIterator
+from typing import List, Dict, Optional, AsyncIterator, Union, Any
 import anthropic
 from openai import AsyncOpenAI
 import google.generativeai as genai
@@ -15,6 +15,9 @@ from config import settings
 class DirectAPIProvider(AIProvider):
     """Provider for direct API access (Anthropic, OpenAI, Google)"""
 
+    client: Union[anthropic.AsyncAnthropic, AsyncOpenAI, None]
+    model: Any  # Can be string or GenerativeModel
+
     def __init__(self, provider: str = "anthropic"):
         """
         Initialize direct API provider
@@ -23,6 +26,7 @@ class DirectAPIProvider(AIProvider):
             provider: Which API to use ("anthropic", "openai", "gemini")
         """
         self.provider = provider.lower()
+        self.client = None
 
         if self.provider == "anthropic":
             if not settings.anthropic_api_key:
@@ -64,8 +68,10 @@ class DirectAPIProvider(AIProvider):
         if context:
             full_prompt = f"Context:\n```\n{context}\n```\n\n{prompt}"
 
-        if self.provider == "anthropic":
-            message = await self.client.messages.create(
+        if self.provider == "anthropic" and isinstance(
+            self.client, anthropic.AsyncAnthropic
+        ):
+            message = await self.client.messages.create(  # type: ignore[attr-defined]
                 model=self.model,
                 max_tokens=4096,
                 system=system_prompt
@@ -74,36 +80,40 @@ class DirectAPIProvider(AIProvider):
             )
             return message.content[0].text
 
-        elif self.provider == "openai":
-            messages = []
+        elif self.provider == "openai" and isinstance(self.client, AsyncOpenAI):
+            messages: List[Dict[str, str]] = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": full_prompt})
 
             response = await self.client.chat.completions.create(
-                model=self.model, messages=messages, max_tokens=4096
+                model=self.model, messages=messages, max_tokens=4096  # type: ignore
             )
-            return response.choices[0].message.content
+            return response.choices[0].message.content or ""
 
         elif self.provider == "gemini":
             # Wrap blocking call to prevent blocking event loop
             response = await asyncio.to_thread(self.model.generate_content, full_prompt)
-            return response.text
+            return response.text  # type: ignore[attr-defined]
+
+        return ""
 
     async def chat(
         self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None
     ) -> str:
         """Have a conversation with AI"""
 
-        if self.provider == "anthropic":
+        if self.provider == "anthropic" and isinstance(
+            self.client, anthropic.AsyncAnthropic
+        ):
             # Convert messages to Anthropic format
-            anthropic_messages = []
+            anthropic_messages: List[Dict[str, str]] = []
             for msg in messages:
                 anthropic_messages.append(
                     {"role": msg["role"], "content": msg["content"]}
                 )
 
-            message = await self.client.messages.create(
+            message = await self.client.messages.create(  # type: ignore[attr-defined]
                 model=self.model,
                 max_tokens=4096,
                 system=system_prompt
@@ -112,8 +122,8 @@ class DirectAPIProvider(AIProvider):
             )
             return message.content[0].text
 
-        elif self.provider == "openai":
-            openai_messages = []
+        elif self.provider == "openai" and isinstance(self.client, AsyncOpenAI):
+            openai_messages: List[Dict[str, str]] = []
             if system_prompt:
                 openai_messages.append({"role": "system", "content": system_prompt})
 
@@ -121,9 +131,9 @@ class DirectAPIProvider(AIProvider):
                 openai_messages.append({"role": msg["role"], "content": msg["content"]})
 
             response = await self.client.chat.completions.create(
-                model=self.model, messages=openai_messages, max_tokens=4096
+                model=self.model, messages=openai_messages, max_tokens=4096  # type: ignore
             )
-            return response.choices[0].message.content
+            return response.choices[0].message.content or ""
 
         elif self.provider == "gemini":
             # Gemini uses a different conversation format
@@ -133,7 +143,9 @@ class DirectAPIProvider(AIProvider):
             response = await asyncio.to_thread(
                 self.model.generate_content, last_message
             )
-            return response.text
+            return response.text  # type: ignore[attr-defined]
+
+        return ""
 
     async def complete(self, code_before: str, code_after: str, language: str) -> str:
         """Get code completion"""
@@ -169,7 +181,7 @@ Provide only the completion text that should be inserted at the cursor. Do not i
             full_prompt = f"Context:\n```\n{context}\n```\n\n{prompt}"
 
         if self.provider == "anthropic":
-            async with self.client.messages.stream(
+            async with self.client.messages.stream(  # type: ignore[union-attr]
                 model=self.model,
                 max_tokens=4096,
                 messages=[{"role": "user", "content": full_prompt}],
@@ -178,7 +190,7 @@ Provide only the completion text that should be inserted at the cursor. Do not i
                     yield text
 
         elif self.provider == "openai":
-            stream = await self.client.chat.completions.create(
+            stream = await self.client.chat.completions.create(  # type: ignore[union-attr]
                 model=self.model,
                 messages=[{"role": "user", "content": full_prompt}],
                 stream=True,

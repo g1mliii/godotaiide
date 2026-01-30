@@ -3,6 +3,7 @@ Git router - API endpoints for Git operations
 """
 
 from fastapi import APIRouter, HTTPException, Query
+from typing import Optional
 import asyncio
 
 from services.git_service import GitService
@@ -22,7 +23,7 @@ router = APIRouter()
 # Initialize Git service from parent directory (project root)
 # The backend is in a subdirectory, so we need to go up one level
 try:
-    git_service = GitService("..")
+    git_service: Optional[GitService] = GitService("..")
 except ValueError as e:
     git_service = None
     print(f"Warning: {e}")

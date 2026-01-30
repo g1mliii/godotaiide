@@ -3,7 +3,7 @@ Index router - API endpoints for code indexing and search
 """
 
 from fastapi import APIRouter, HTTPException
-from typing import List
+from typing import List, Optional
 
 from services.indexer_service import CodeIndexer
 from models.index_models import IndexRequest, IndexResponse, SearchResponse
@@ -12,7 +12,7 @@ router = APIRouter()
 
 # Initialize indexer service
 try:
-    indexer = CodeIndexer()
+    indexer: Optional[CodeIndexer] = CodeIndexer()
 except Exception as e:
     indexer = None
     print(f"Warning: Could not initialize CodeIndexer: {e}")
@@ -40,7 +40,9 @@ async def index_project(request: IndexRequest):
 
 
 @router.get("/search", response_model=SearchResponse)
-async def search_code(query: str, max_results: int = 5, file_types: List[str] = None):
+async def search_code(
+    query: str, max_results: int = 5, file_types: Optional[List[str]] = None
+):
     """Search indexed codebase for relevant code chunks"""
     if indexer is None:
         raise HTTPException(status_code=500, detail="Indexer not initialized")

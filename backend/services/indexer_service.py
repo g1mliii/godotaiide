@@ -6,7 +6,7 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 from pathlib import Path
 import re
-from typing import List, Dict, Tuple, Optional, Pattern
+from typing import List, Dict, Tuple, Optional, Pattern, Any
 import hashlib
 import json
 import asyncio
@@ -305,7 +305,9 @@ class CodeIndexer:
             ids.append(chunk_id)
 
         # Add to collection
-        self.collection.add(documents=documents, metadatas=metadatas, ids=ids)
+        self.collection.add(
+            documents=documents, metadatas=metadatas, ids=ids  # type: ignore[arg-type]
+        )
 
     def search(
         self, query: str, max_results: int = 5, file_types: Optional[List[str]] = None
@@ -332,18 +334,28 @@ class CodeIndexer:
         results = self.collection.query(query_texts=[query], n_results=max_results)
 
         # Convert to CodeChunk objects
-        chunks = []
-        if results["documents"]:
+        chunks: List[CodeChunk] = []
+        if results["documents"] and results["metadatas"] and results["distances"]:
             for i in range(len(results["documents"][0])):
                 metadata = results["metadatas"][0][i]
                 chunks.append(
                     CodeChunk(
-                        file_path=metadata["file_path"],
+                        file_path=str(metadata["file_path"]),
                         content=results["documents"][0][i],
-                        chunk_type=metadata["chunk_type"],
-                        name=metadata.get("name"),
-                        line_start=metadata.get("line_start"),
-                        line_end=metadata.get("line_end"),
+                        chunk_type=str(metadata["chunk_type"]),
+                        name=(
+                            str(metadata.get("name")) if metadata.get("name") else None
+                        ),
+                        line_start=(
+                            int(metadata["line_start"])
+                            if metadata.get("line_start")
+                            else None
+                        ),
+                        line_end=(
+                            int(metadata["line_end"])
+                            if metadata.get("line_end")
+                            else None
+                        ),
                         similarity_score=1.0
                         - results["distances"][0][i],  # Convert distance to similarity
                     )
@@ -496,7 +508,7 @@ class CodeIndexer:
         # Get multiline patterns for this file type
         patterns = self.MULTILINE_PATTERNS.get(ext, {})
 
-        chunks = []
+        chunks: List[Dict[str, Any]] = []
         lines = content.split("\n")
 
         # Find all functions at once using multiline regex

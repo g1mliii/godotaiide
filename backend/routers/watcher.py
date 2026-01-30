@@ -4,6 +4,7 @@ Watcher router - API endpoints for file watching
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from typing import Optional
 
 from services.watcher_service import FileWatcherService
 from services.indexer_service import CodeIndexer
@@ -11,12 +12,11 @@ from services.indexer_service import CodeIndexer
 router = APIRouter()
 
 # Initialize services
+watcher_service: Optional[FileWatcherService] = None
 try:
-    indexer = CodeIndexer()
-    watcher_service = FileWatcherService(indexer)
+    _indexer = CodeIndexer()
+    watcher_service = FileWatcherService(_indexer)
 except Exception as e:
-    indexer = None
-    watcher_service = None
     print(f"Warning: Could not initialize FileWatcherService: {e}")
 
 

@@ -278,7 +278,7 @@ class GitService:
         current_branch = self.repo.active_branch.name
         branches = []
 
-        for branch in self.repo.branches:
+        for branch in self.repo.branches:  # type: ignore[attr-defined]
             branches.append(
                 Branch(name=branch.name, is_current=(branch.name == current_branch))
             )
@@ -315,7 +315,7 @@ class GitService:
                 CommitInfo(
                     hash=commit.hexsha,
                     short_hash=commit.hexsha[:7],
-                    message=commit.message.strip(),
+                    message=str(commit.message).strip(),
                     author=f"{commit.author.name} <{commit.author.email}>",
                     date=commit.committed_datetime.isoformat(),
                 )

@@ -351,7 +351,6 @@ class CodeIndexer:
 
         return chunks
 
-
     def remove_file(self, file_path: Path, project_root: Path) -> None:
         """
         Remove a file from the index
@@ -362,17 +361,17 @@ class CodeIndexer:
         """
         try:
             relative_path = str(file_path.relative_to(project_root))
-            
+
             # Delete from ChromaDB using metadata filter
             self.collection.delete(where={"file_path": relative_path})
-            
+
             # Remove from hash cache
             if relative_path in self._file_hashes:
                 del self._file_hashes[relative_path]
                 self._save_file_hashes()
-                
+
             logger.info(f"Removed file from index: {relative_path}")
-            
+
         except Exception as e:
             logger.error(f"Error removing file {file_path}: {e}")
 

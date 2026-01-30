@@ -11,7 +11,8 @@ signal status_refreshed(file_count: int)
 # Constants
 const MIN_COMMIT_MESSAGE_LENGTH := 3
 const MAX_FILES := 10000
-const DEBOUNCE_DELAY := 0.2  # 200ms debounce prevents UI spam from rapid typing (UX research optimal range: 150-300ms)
+# 200ms debounce prevents UI spam from rapid typing (UX optimal: 150-300ms)
+const DEBOUNCE_DELAY := 0.2
 
 # Color constants (prevent allocations)
 const COLOR_CATEGORY := Color(0.7, 0.7, 0.7, 1.0)
@@ -21,12 +22,12 @@ const COLOR_DELETED := Color(1.0, 0.5, 0.5)
 const COLOR_UNTRACKED := Color(0.9, 0.9, 0.5)
 
 # Lucide icons (lazy loaded in _ready to reduce plugin load time)
-var ICON_REFRESH: Texture2D
-var ICON_SPARKLES: Texture2D
-var ICON_FILE: Texture2D
-var ICON_FILE_PLUS: Texture2D
-var ICON_FILE_MINUS: Texture2D
-var ICON_CHECK: Texture2D
+var _icon_refresh: Texture2D
+var _icon_sparkles: Texture2D
+var _icon_file: Texture2D
+var _icon_file_plus: Texture2D
+var _icon_file_minus: Texture2D
+var _icon_check: Texture2D
 
 # State
 var _api_client: Node
@@ -93,8 +94,9 @@ func _exit_tree() -> void:
 		commit_button.pressed.disconnect(_on_commit_button_pressed)
 	if ai_message_button and ai_message_button.pressed.is_connected(_on_ai_message_button_pressed):
 		ai_message_button.pressed.disconnect(_on_ai_message_button_pressed)
-	if commit_message_edit and commit_message_edit.text_changed.is_connected(_on_commit_message_text_changed):
-		commit_message_edit.text_changed.disconnect(_on_commit_message_text_changed)
+	if commit_message_edit:
+		if commit_message_edit.text_changed.is_connected(_on_commit_message_text_changed):
+			commit_message_edit.text_changed.disconnect(_on_commit_message_text_changed)
 	if file_tree and file_tree.item_activated.is_connected(_on_file_tree_item_activated):
 		file_tree.item_activated.disconnect(_on_file_tree_item_activated)
 	if polling_timer and polling_timer.timeout.is_connected(_on_polling_timer_timeout):
@@ -149,12 +151,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 func _load_icons() -> void:
 	"""Lazy load icons on demand instead of preloading at compile time"""
-	ICON_REFRESH = load("res://addons/godot_minds/icons/lucide/refresh-cw.svg")
-	ICON_SPARKLES = load("res://addons/godot_minds/icons/lucide/sparkles.svg")
-	ICON_FILE = load("res://addons/godot_minds/icons/lucide/file.svg")
-	ICON_FILE_PLUS = load("res://addons/godot_minds/icons/lucide/file-plus.svg")
-	ICON_FILE_MINUS = load("res://addons/godot_minds/icons/lucide/file-minus.svg")
-	ICON_CHECK = load("res://addons/godot_minds/icons/lucide/check.svg")
+	_icon_refresh = load("res://addons/godot_minds/icons/lucide/refresh-cw.svg")
+	_icon_sparkles = load("res://addons/godot_minds/icons/lucide/sparkles.svg")
+	_icon_file = load("res://addons/godot_minds/icons/lucide/file.svg")
+	_icon_file_plus = load("res://addons/godot_minds/icons/lucide/file-plus.svg")
+	_icon_file_minus = load("res://addons/godot_minds/icons/lucide/file-minus.svg")
+	_icon_check = load("res://addons/godot_minds/icons/lucide/check.svg")
 
 
 func _initialize_api_client() -> void:
@@ -170,9 +172,9 @@ func _initialize_api_client() -> void:
 
 func _setup_icons() -> void:
 	# Set Lucide icons for buttons
-	refresh_button.icon = ICON_REFRESH
-	ai_message_button.icon = ICON_SPARKLES
-	commit_button.icon = ICON_CHECK
+	refresh_button.icon = _icon_refresh
+	ai_message_button.icon = _icon_sparkles
+	commit_button.icon = _icon_check
 
 
 func _setup_debounce_timer() -> void:
@@ -219,7 +221,10 @@ func _setup_tree() -> void:
 
 func _setup_polling() -> void:
 	# Cache polling interval to avoid repeated settings lookups
-	_cached_polling_interval = _settings.get_polling_interval() if _settings and _settings.has_method("get_polling_interval") else 2.0
+	if _settings and _settings.has_method("get_polling_interval"):
+		_cached_polling_interval = _settings.get_polling_interval()
+	else:
+		_cached_polling_interval = 2.0
 	polling_timer.wait_time = _cached_polling_interval
 	polling_timer.start()
 	_is_polling_active = true
@@ -274,7 +279,8 @@ func _populate_tree(data: Dictionary) -> void:
 
 	# Bounds checking
 	if files.size() > MAX_FILES:
-		push_warning("[SourceControlDock] Too many files (%d), truncating to %d" % [files.size(), MAX_FILES])
+		var warn_msg := "[SourceControlDock] Too many files (%d), truncating to %d"
+		push_warning(warn_msg % [files.size(), MAX_FILES])
 		files = files.slice(0, MAX_FILES)
 
 	# Hash-based change detection - only rebuild if data changed
@@ -306,7 +312,7 @@ func _populate_tree(data: Dictionary) -> void:
 	_populate_tree_full_rebuild(files, data, original_file_count)
 
 
-func _try_incremental_tree_update(files: Array, data: Dictionary) -> bool:
+func _try_incremental_tree_update(files: Array, _data: Dictionary) -> bool:
 	"""Try to incrementally update tree instead of full rebuild. Returns true if successful."""
 	# Build current file set
 	var current_file_set: Dictionary = {}
@@ -479,15 +485,15 @@ func _get_status_display(status: String) -> Dictionary:
 	"""Get icon and color for a status code (combined to avoid duplication)"""
 	match status:
 		"M":
-			return {"icon": ICON_FILE, "color": COLOR_MODIFIED}
+			return {"icon": _icon_file, "color": COLOR_MODIFIED}
 		"A":
-			return {"icon": ICON_FILE_PLUS, "color": COLOR_ADDED}
+			return {"icon": _icon_file_plus, "color": COLOR_ADDED}
 		"D":
-			return {"icon": ICON_FILE_MINUS, "color": COLOR_DELETED}
+			return {"icon": _icon_file_minus, "color": COLOR_DELETED}
 		"??":
-			return {"icon": ICON_FILE_PLUS, "color": COLOR_UNTRACKED}
+			return {"icon": _icon_file_plus, "color": COLOR_UNTRACKED}
 		_:
-			return {"icon": ICON_FILE, "color": Color.WHITE}
+			return {"icon": _icon_file, "color": Color.WHITE}
 
 
 # File Staging
@@ -564,7 +570,8 @@ func _validate_commit_message() -> bool:
 		return false
 
 	# Check length AFTER stripping to prevent whitespace-padded short messages
-	if message.length() < MIN_COMMIT_MESSAGE_LENGTH:
+	var min_len := MIN_COMMIT_MESSAGE_LENGTH
+	if message.length() < min_len:
 		_show_alert("Commit message too short (minimum %d characters)" % MIN_COMMIT_MESSAGE_LENGTH, "Invalid Message")
 		commit_message_edit.grab_focus()
 		return false

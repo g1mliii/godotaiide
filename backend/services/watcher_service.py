@@ -88,7 +88,7 @@ class CodeFileHandler(FileSystemEventHandler):
                 if (project_root / ".git").exists():
                     break
                 project_root = project_root.parent
-            
+
             self.indexer.remove_file(file_path, project_root)
 
     def _should_process_file(self, file_path: Path) -> bool:
@@ -145,7 +145,9 @@ class CodeFileHandler(FileSystemEventHandler):
                     break
                 self.change_event.clear()
             else:
-                time.sleep(0.1)  # Check every 100ms when we have pending changes for debounce
+                time.sleep(
+                    0.1
+                )  # Check every 100ms when we have pending changes for debounce
 
             current_time = time.time()
             files_to_process = []

@@ -32,12 +32,13 @@ func _enter_tree() -> void:
 		push_error("[Godot-Minds] Failed to register autoloads. Plugin may not function correctly.")
 		return
 
-	print("[Godot-Minds] Autoloads registered successfully: %s, %s" % [SETTINGS_AUTOLOAD, API_CLIENT_AUTOLOAD])
+	var msg := "[Godot-Minds] Autoloads registered: %s, %s"
+	print(msg % [SETTINGS_AUTOLOAD, API_CLIENT_AUTOLOAD])
 	print("[Godot-Minds] Server URL: ", _get_server_url())
 
 	# Add Source Control dock
-	var dock_scene := preload("res://addons/godot_minds/scenes/source_control_dock.tscn")
-	_source_control_dock = dock_scene.instantiate()
+	var DockScene := preload("res://addons/godot_minds/scenes/source_control_dock.tscn")
+	_source_control_dock = DockScene.instantiate()
 	add_control_to_dock(DOCK_SLOT_RIGHT_BL, _source_control_dock)
 	print("[Godot-Minds] Source Control dock added")
 

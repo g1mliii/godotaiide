@@ -206,9 +206,9 @@ func _initialize_settings() -> void:
 func _create_setting_if_missing(
 	setting_path: String,
 	default_value: Variant,
-	type: int,
-	hint: int = PROPERTY_HINT_NONE,
-	hint_string: String = ""
+	_type: int,
+	_hint: int = PROPERTY_HINT_NONE,
+	_hint_string: String = ""
 ) -> void:
 	if _editor_settings.has_setting(setting_path):
 		return

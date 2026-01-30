@@ -1,3 +1,4 @@
+# gdlint:ignore = max-public-methods
 extends Node
 
 # Signals - Git Operations
@@ -34,6 +35,8 @@ signal api_error(error_message: String)
 # Constants
 const REQUEST_TIMEOUT := 30.0  # Default timeout for AI operations
 const GIT_REQUEST_TIMEOUT := 10.0  # Shorter timeout for git operations
+const MAX_ACTIVE_REQUESTS := 100
+const MAX_WS_PACKETS_PER_FRAME := 10  # Limit WebSocket packets per frame
 
 # Private variables
 var _base_url: String = ""
@@ -49,10 +52,6 @@ var _cached_ai_mode: String = "direct"
 
 # Reusable JSON parser to avoid allocations
 var _json_parser: JSON
-
-# Constants for limits
-const MAX_ACTIVE_REQUESTS := 100
-const MAX_WS_PACKETS_PER_FRAME := 10  # Limit WebSocket packets processed per frame
 
 
 func _ready() -> void:
@@ -385,16 +384,23 @@ func _get_safe_ai_mode() -> String:
 
 # Private Methods - HTTP Requests
 
-func _make_get_request(endpoint: String, request_type: String, timeout: float = REQUEST_TIMEOUT) -> int:
+func _make_get_request(
+	endpoint: String, request_type: String, timeout: float = REQUEST_TIMEOUT
+) -> int:
 	var url := _base_url + endpoint
 	return _make_request(url, HTTPClient.METHOD_GET, [], "", request_type, timeout)
 
 
-func _make_post_request(endpoint: String, body: Dictionary, request_type: String, timeout: float = REQUEST_TIMEOUT) -> int:
+func _make_post_request(
+	endpoint: String, body: Dictionary, request_type: String,
+	timeout: float = REQUEST_TIMEOUT
+) -> int:
 	var url := _base_url + endpoint
 	var headers := ["Content-Type: application/json"]
 	var json_body := JSON.stringify(body)
-	return _make_request(url, HTTPClient.METHOD_POST, headers, json_body, request_type, timeout)
+	return _make_request(
+		url, HTTPClient.METHOD_POST, headers, json_body, request_type, timeout
+	)
 
 
 func _make_request(
@@ -407,7 +413,8 @@ func _make_request(
 ) -> int:
 	# Check if we've hit the maximum number of active requests
 	if _active_requests.size() >= MAX_ACTIVE_REQUESTS:
-		push_error("Maximum active requests reached (%d). Request to %s rejected." % [MAX_ACTIVE_REQUESTS, url])
+		var err_msg := "Maximum active requests reached (%d). Request rejected."
+		push_error(err_msg % MAX_ACTIVE_REQUESTS)
 		api_error.emit("Too many active requests. Please try again later.")
 		return -1
 
@@ -450,7 +457,7 @@ func _make_request(
 func _on_request_completed(
 	result: int,
 	response_code: int,
-	headers: PackedStringArray,
+	_headers: PackedStringArray,
 	body: PackedByteArray,
 	request_id: int
 ) -> void:
@@ -554,7 +561,8 @@ func _cleanup_timed_out_requests() -> void:
 			var elapsed := now - request_info.start_time
 			if elapsed > timeout_threshold:
 				timed_out_requests.append(request_id)
-				push_warning("[GodotMindsAPI] Cleaning up timed-out request %d (%.1fs elapsed)" % [request_id, elapsed])
+				var msg := "[GodotMindsAPI] Cleaning up timed-out request %d"
+				push_warning(msg % request_id)
 
 	# Clean up in separate loop to avoid modifying dict during iteration
 	for request_id in timed_out_requests:
@@ -602,7 +610,8 @@ func _process_websocket() -> void:
 
 			# Process available messages (limit per frame to prevent UI freezing)
 			var packets_processed := 0
-			while _ws_client.get_available_packet_count() > 0 and packets_processed < MAX_WS_PACKETS_PER_FRAME:
+			var max_packets := MAX_WS_PACKETS_PER_FRAME
+			while _ws_client.get_available_packet_count() > 0 and packets_processed < max_packets:
 				var packet := _ws_client.get_packet()
 				var message := packet.get_string_from_utf8()
 				_handle_websocket_message(message)

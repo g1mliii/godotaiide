@@ -151,7 +151,14 @@ class GitService:
             operation: The git operation performed (add, commit, checkout, etc.)
         """
         # Only operations that change working tree status need cache invalidation
-        status_changing_ops = {"add", "commit", "restore", "checkout", "reset", "revert"}
+        status_changing_ops = {
+            "add",
+            "commit",
+            "restore",
+            "checkout",
+            "reset",
+            "revert",
+        }
 
         if operation in status_changing_ops or operation == "unknown":
             self._status_cache = None
@@ -214,7 +221,9 @@ class GitService:
             original_content=original_content,
             new_content=new_content,
             diff_text=diff_text,
-            diff_compressed=diff_compressed if diff_compressed else None,  # Optional field
+            diff_compressed=(
+                diff_compressed if diff_compressed else None
+            ),  # Optional field
         )
 
     def add_files(self, files: List[str]) -> None:

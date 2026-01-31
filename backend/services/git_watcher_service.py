@@ -226,7 +226,7 @@ class GitWatcherService:
         try:
             self.observer.schedule(self.handler, str(watch_path), recursive=True)
             self.observer.start()
-        except Exception as e:
+        except Exception:
             # Clean up on error to prevent resource leaks
             self.observer = None
             self.handler = None

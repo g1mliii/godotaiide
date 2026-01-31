@@ -1,4 +1,4 @@
-# gdlint: ignore=max-file-lines
+# gdlint: disable=max-file-lines
 @tool
 class_name SourceControlDock
 extends Control

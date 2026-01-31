@@ -3,12 +3,14 @@ Git router - API endpoints for Git operations
 """
 
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
+from typing import Optional, Union
 import asyncio
 
 from services.git_service import GitService
+from services.session_manager import SessionManager
 from models.git_models import (
     GitStatusResponse,
+    GitDeltaResponse,
     GitDiffResponse,
     GitAddRequest,
     GitRestoreRequest,
@@ -20,6 +22,10 @@ from models.git_models import (
 
 router = APIRouter()
 
+# Initialize session manager for delta updates
+session_manager = SessionManager()
+
+
 # Initialize Git service from parent directory (project root)
 # The backend is in a subdirectory, so we need to go up one level
 try:
@@ -29,14 +35,40 @@ except ValueError as e:
     print(f"Warning: {e}")
 
 
-@router.get("/status", response_model=GitStatusResponse)
-async def get_status():
-    """Get working tree status with file changes"""
+@router.get("/status", response_model=Union[GitStatusResponse, GitDeltaResponse])
+async def get_status(
+    client_id: Optional[str] = Query(None, description="Client ID for delta updates")
+):
+    """Get working tree status with file changes.
+
+    If client_id is provided, returns delta since last request.
+    Otherwise returns full status.
+    """
     if git_service is None:
         raise HTTPException(status_code=500, detail="Git repository not initialized")
 
     try:
         status = await asyncio.to_thread(git_service.get_status)
+
+        # If client_id provided, return delta
+        if client_id:
+            previous = session_manager.get_cached_status(client_id)
+            session_manager.update_cache(client_id, status)
+
+            if previous:
+                # Calculate and return delta
+                return git_service.calculate_delta(status, previous)
+            else:
+                # First request or session expired - return full status as delta format
+                return GitDeltaResponse(
+                    branch=status.branch,
+                    added=status.files,
+                    removed=[],
+                    changed=[],
+                    unchanged_count=0,
+                    is_full_refresh=True,
+                )
+
         return status
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

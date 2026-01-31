@@ -59,6 +59,9 @@ var _cached_ai_mode: String = "direct"
 # Editor actions service (set by plugin when available)
 var _editor_actions = null  # EditorActions instance
 
+# Client ID for delta updates
+var _client_id: String = ""
+
 # Reusable JSON parser to avoid allocations
 var _json_parser: JSON
 
@@ -66,11 +69,13 @@ var _json_parser: JSON
 func _ready() -> void:
 	print("[GodotMindsAPI] _ready() called - starting initialization")
 	_json_parser = JSON.new()  # Reusable parser
+	_client_id = _generate_client_id()
 	_initialize_settings_cache()
 	_initialize_urls()
 	_initialize_websocket()
 	# Enable process for timeout monitoring
 	set_process(true)
+	print("[GodotMindsAPI] Client ID: %s" % _client_id)
 	print("[GodotMindsAPI] _ready() completed successfully")
 
 
@@ -100,7 +105,10 @@ func _process(_delta: float) -> void:
 # Public Methods - Git Operations
 
 func get_git_status() -> int:
-	return _make_get_request("/git/status", "git_status", GIT_REQUEST_TIMEOUT)
+	var endpoint := "/git/status"
+	if not _client_id.is_empty():
+		endpoint += "?client_id=%s" % _client_id.uri_encode()
+	return _make_get_request(endpoint, "git_status", GIT_REQUEST_TIMEOUT)
 
 
 func get_git_diff(file_path: String) -> int:
@@ -410,6 +418,17 @@ func _get_safe_ai_mode() -> String:
 	return _cached_ai_mode
 
 
+func _generate_client_id() -> String:
+	"""Generate unique client ID for delta updates (UUID v4 format)"""
+	var uuid := []
+	for i in range(16):
+		uuid.append(randi() % 256)
+	# Set version (4) and variant bits per UUID v4 spec
+	uuid[6] = (uuid[6] & 0x0f) | 0x40  # Version 4
+	uuid[8] = (uuid[8] & 0x3f) | 0x80  # Variant 1
+	return "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x" % uuid
+
+
 # Private Methods - HTTP Requests
 
 func _make_get_request(
@@ -610,11 +629,7 @@ func _cleanup_request(request_id: int) -> void:
 	var http_node: HTTPRequest = request_info.get("node")
 
 	if http_node and is_instance_valid(http_node):
-		# Disconnect signal before freeing to prevent memory leaks
-		if http_node.request_completed.is_connected(_on_request_completed):
-			http_node.request_completed.disconnect(_on_request_completed)
-
-		# Queue the node for deletion
+		# Queue the node for deletion (signals are automatically disconnected)
 		http_node.queue_free()
 
 	_active_requests.erase(request_id)

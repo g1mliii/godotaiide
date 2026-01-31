@@ -13,6 +13,7 @@ import base64
 from models.git_models import (
     FileStatus,
     GitStatusResponse,
+    GitDeltaResponse,
     GitDiffResponse,
     Branch,
     CommitInfo,
@@ -83,12 +84,27 @@ class GitService:
 
             if status_output:
                 # Split by null character
-                for line in status_output.split("\0"):
+                lines = status_output.split("\0")
+                i = 0
+                while i < len(lines):
+                    line = lines[i]
                     if not line:
+                        i += 1
+                        continue
+
+                    # Lines must be at least 3 characters (XY + space + path)
+                    if len(line) < 3:
+                        i += 1
                         continue
 
                     status_code = line[:2]
                     file_path = line[3:]
+
+                    # Handle renames and copies: with -z flag, the old path is in the NEXT line
+                    # Format: "R  new_path\0old_path\0" or "C  new_path\0old_path\0"
+                    if status_code[0] in ("R", "C") or status_code[1] in ("R", "C"):
+                        # Skip the next line (old path) - we only care about the new path
+                        i += 1
 
                     # Parse status codes (index vs working tree)
                     # status_code[0] = staging area (index)
@@ -97,19 +113,25 @@ class GitService:
                     # Add staged changes (if any)
                     if status_code[0] != " " and status_code[0] != "?":
                         files.append(
-                            FileStatus(path=file_path, status=status_code[0], staged=True)
+                            FileStatus(
+                                path=file_path, status=status_code[0], staged=True
+                            )
                         )
 
                     # Add unstaged changes (if any)
                     if status_code[1] != " ":
                         files.append(
-                            FileStatus(path=file_path, status=status_code[1], staged=False)
+                            FileStatus(
+                                path=file_path, status=status_code[1], staged=False
+                            )
                         )
                     elif status_code == "??":
                         # Untracked files
                         files.append(
                             FileStatus(path=file_path, status="??", staged=False)
                         )
+
+                    i += 1
         except GitCommandError:
             # Fallback to old method if porcelain fails
             files = self._fetch_status_fallback()
@@ -325,3 +347,47 @@ class GitService:
             )
 
         return commits
+
+    def calculate_delta(
+        self, current: GitStatusResponse, previous: GitStatusResponse
+    ) -> GitDeltaResponse:
+        """
+        Calculate delta between current and previous status.
+
+        Args:
+            current: Current git status
+            previous: Previously cached git status
+
+        Returns:
+            GitDeltaResponse with only the changes
+        """
+        # Build lookup dicts: path -> FileStatus
+        current_files = {f.path: f for f in current.files}
+        previous_files = {f.path: f for f in previous.files}
+
+        added = []
+        removed = []
+        changed = []
+        unchanged_count = 0
+
+        # Find added and changed files
+        for path, file_status in current_files.items():
+            if path not in previous_files:
+                added.append(file_status)
+            elif file_status != previous_files[path]:
+                changed.append(file_status)
+            else:
+                unchanged_count += 1
+
+        # Find removed files
+        for path in previous_files:
+            if path not in current_files:
+                removed.append(path)
+
+        return GitDeltaResponse(
+            branch=current.branch,
+            added=added,
+            removed=removed,
+            changed=changed,
+            unchanged_count=unchanged_count,
+        )

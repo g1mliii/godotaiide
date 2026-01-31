@@ -20,6 +20,11 @@ const COLOR_MODIFIED := Color(0.5, 0.8, 1.0)
 const COLOR_ADDED := Color(0.5, 1.0, 0.5)
 const COLOR_DELETED := Color(1.0, 0.5, 0.5)
 const COLOR_UNTRACKED := Color(0.9, 0.9, 0.5)
+const COLOR_RENAMED := Color(0.9, 0.7, 0.3)
+const COLOR_COPIED := Color(0.6, 0.9, 0.6)
+
+# Cached status display data (avoid allocations in hot path)
+var _status_displays: Dictionary = {}  # Initialized in _ready
 
 # Lucide icons (lazy loaded in _ready to reduce plugin load time)
 var _icon_refresh: Texture2D
@@ -64,6 +69,7 @@ var _tree_item_cache: Dictionary = {}  # Map file_path -> TreeItem for increment
 func _ready() -> void:
 	await get_tree().process_frame  # Wait for autoloads
 	_load_icons()
+	_init_status_displays()  # Cache status displays after icons loaded
 	_initialize_api_client()
 	_setup_icons()
 	_setup_debounce_timer()
@@ -244,6 +250,9 @@ func _setup_tree() -> void:
 	file_tree.set_column_custom_minimum_width(1, 50)
 	file_tree.hide_root = true
 	file_tree.select_mode = Tree.SELECT_ROW  # Enable row selection
+	file_tree.allow_reselect = false  # Prevent reselect spam
+	file_tree.scroll_horizontal_enabled = true
+	file_tree.scroll_vertical_enabled = true
 
 
 func _setup_polling() -> void:
@@ -260,7 +269,12 @@ func _setup_polling() -> void:
 # Tree Population
 
 func _on_git_status_received(data: Dictionary) -> void:
-	# Validate response structure
+	# Check if this is a delta response (has added/removed/changed fields)
+	if data.has("added") and data.has("removed") and data.has("changed"):
+		_handle_delta_response(data)
+		return
+	
+	# Validate full response structure
 	if not data.has("files") or not data.has("branch"):
 		push_error("[SourceControlDock] Invalid git status response: missing required fields")
 		_on_api_error("Invalid response from backend")
@@ -272,6 +286,96 @@ func _on_git_status_received(data: Dictionary) -> void:
 		return
 
 	_populate_tree(data)
+
+
+func _handle_delta_response(data: Dictionary) -> void:
+	"""Apply delta updates to local state instead of full rebuild."""
+	var added: Array = data.get("added", [])
+	var removed: Array = data.get("removed", [])
+	var changed: Array = data.get("changed", [])
+	var is_full_refresh: bool = data.get("is_full_refresh", false)
+	var branch: String = data.get("branch", "")
+	
+	# Update branch label
+	if not branch.is_empty():
+		branch_label.text = "Branch: %s" % branch
+	
+	# If full refresh, treat as normal status response (first request or session expired)
+	if is_full_refresh:
+		var files := added  # All files are in 'added' for full refresh
+		_populate_tree({"files": files, "branch": branch})
+		return
+	
+	# If no changes at all, skip update
+	if added.is_empty() and removed.is_empty() and changed.is_empty():
+		return
+	
+	var root := file_tree.get_root()
+	if not root or root.get_child_count() < 2:
+		# Tree not initialized yet, fall back to full refresh
+		var all_files := added + changed
+		_populate_tree({"files": all_files, "branch": branch})
+		return
+	
+	var staged_category := root.get_child(0)
+	var unstaged_category := root.get_child(1)
+	
+	# Remove deleted files
+	for path in removed:
+		if _tree_item_cache.has(path):
+			var item: TreeItem = _tree_item_cache[path]
+			if item:
+				item.free()
+			_tree_item_cache.erase(path)
+		_last_file_set.erase(path)
+		_staged_files.erase(path)
+		_unstaged_files.erase(path)
+	
+	# Add/update files (added + changed)
+	var all_updates := added + changed
+	for file_data in all_updates:
+		var file_path: String = file_data.get("path", "")
+		var staged: bool = file_data.get("staged", false)
+		
+		_last_file_set[file_path] = file_data
+		
+		if staged:
+			_staged_files[file_path] = file_data
+			_unstaged_files.erase(file_path)
+		else:
+			_unstaged_files[file_path] = file_data
+			_staged_files.erase(file_path)
+		
+		# Remove old tree item if exists (may need to move categories)
+		if _tree_item_cache.has(file_path):
+			var old_item: TreeItem = _tree_item_cache[file_path]
+			if old_item:
+				old_item.free()
+			_tree_item_cache.erase(file_path)
+		
+		# Create new tree item in correct category
+		var parent_category := staged_category if staged else unstaged_category
+		var item := _create_file_item(file_data, parent_category, staged)
+		_tree_item_cache[file_path] = item
+	
+	# Update category labels
+	staged_category.set_text(0, "Staged Changes (%d)" % _staged_files.size())
+	unstaged_category.set_text(0, "Unstaged Changes (%d)" % _unstaged_files.size())
+	
+	# Update file count
+	var total_files := _staged_files.size() + _unstaged_files.size()
+	file_count_label.text = "%d files" % total_files
+	
+	# Update hash to prevent redundant rebuilds if next response is full status
+	_last_status_hash = hash("%s:%d:%d:%d" % [
+		branch,
+		total_files,
+		_staged_files.size(),
+		_unstaged_files.size()
+	])
+	
+	_update_button_states()
+	status_refreshed.emit(total_files)
 
 
 func _clear_tree_metadata() -> void:
@@ -455,20 +559,33 @@ func _populate_tree_full_rebuild(files: Array, data: Dictionary, original_file_c
 	# Build current file set for next incremental update
 	_last_file_set.clear()
 
+	# Pre-sort files to reduce tree rebalancing (staged first, then unstaged)
+	var staged_files_list: Array = []
+	var unstaged_files_list: Array = []
+	
 	for file_data in files:
 		var file_path: String = file_data.get("path", "")
 		_last_file_set[file_path] = file_data
-
+		
 		if file_data.get("staged", false):
-			var item := _create_file_item(file_data, staged_category, true)
-			_tree_item_cache[file_path] = item
+			staged_files_list.append(file_data)
 			_staged_files[file_path] = file_data
-			staged_count += 1
 		else:
-			var item := _create_file_item(file_data, unstaged_category, false)
-			_tree_item_cache[file_path] = item
+			unstaged_files_list.append(file_data)
 			_unstaged_files[file_path] = file_data
-			unstaged_count += 1
+	
+	# Add items in batch (all staged, then all unstaged)
+	for file_data in staged_files_list:
+		var file_path: String = file_data.get("path", "")
+		var item := _create_file_item(file_data, staged_category, true)
+		_tree_item_cache[file_path] = item
+		staged_count += 1
+
+	for file_data in unstaged_files_list:
+		var file_path: String = file_data.get("path", "")
+		var item := _create_file_item(file_data, unstaged_category, false)
+		_tree_item_cache[file_path] = item
+		unstaged_count += 1
 
 	# Update labels (use format strings to avoid string concatenation allocations)
 	staged_category.set_text(0, "Staged Changes (%d)" % staged_count)
@@ -522,19 +639,25 @@ func _create_file_item(file_data: Dictionary, parent: TreeItem, staged: bool) ->
 	return item
 
 
+func _init_status_displays() -> void:
+	"""Pre-cache status display dictionaries to avoid allocations in hot path"""
+	_status_displays = {
+		"M": {"icon": _icon_file, "color": COLOR_MODIFIED},
+		"A": {"icon": _icon_file_plus, "color": COLOR_ADDED},
+		"D": {"icon": _icon_file_minus, "color": COLOR_DELETED},
+		"R": {"icon": _icon_file, "color": COLOR_RENAMED},
+		"C": {"icon": _icon_file_plus, "color": COLOR_COPIED},
+		"??": {"icon": _icon_file_plus, "color": COLOR_UNTRACKED},
+		"U": {"icon": _icon_file_plus, "color": COLOR_UNTRACKED},
+		"_default": {"icon": _icon_file, "color": Color.WHITE},
+	}
+
+
 func _get_status_display(status: String) -> Dictionary:
-	"""Get icon and color for a status code (combined to avoid duplication)"""
-	match status:
-		"M":
-			return {"icon": _icon_file, "color": COLOR_MODIFIED}
-		"A":
-			return {"icon": _icon_file_plus, "color": COLOR_ADDED}
-		"D":
-			return {"icon": _icon_file_minus, "color": COLOR_DELETED}
-		"??", "U":  # Untracked files
-			return {"icon": _icon_file_plus, "color": COLOR_UNTRACKED}
-		_:
-			return {"icon": _icon_file, "color": Color.WHITE}
+	"""Get icon and color for a status code (uses cached lookup)"""
+	if _status_displays.has(status):
+		return _status_displays[status]
+	return _status_displays["_default"]
 
 
 # File Staging

@@ -1,5 +1,5 @@
+# gdlint: ignore=max-public-methods
 @tool
-# gdlint: disable=max-public-methods
 class_name EditorActions
 extends RefCounted
 ## EditorActions - Service for AI-driven editor manipulation

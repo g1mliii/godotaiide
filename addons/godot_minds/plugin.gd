@@ -61,9 +61,8 @@ func _exit_tree() -> void:
 	if _editor_actions:
 		var api_client := get_node_or_null("/root/" + API_CLIENT_AUTOLOAD)
 		if api_client and api_client.has_method("set_editor_actions"):
-			api_client.set_editor_actions(null)  # Clear reference
 		_editor_actions = null
-	
+
 	# Remove Source Control dock
 	if _source_control_dock:
 		remove_control_from_docks(_source_control_dock)

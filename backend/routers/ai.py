@@ -182,3 +182,69 @@ Always confirm what you've done after completing the task."""
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# AUTH ENDPOINTS (OpenCode Subscription)
+# =============================================================================
+
+
+@router.get("/auth/status")
+async def get_auth_status():
+    """
+    Get authentication status for OpenCode subscription providers.
+
+    Returns which AI backends (Claude, ChatGPT, Copilot) are authenticated.
+    """
+    try:
+        from ai_providers.opencode import OpenCodeProvider
+
+        provider = OpenCodeProvider()
+        status = await provider.get_auth_status()
+        return {
+            "opencode_available": True,
+            "providers": status,
+        }
+    except ValueError as e:
+        # OpenCode not installed
+        return {
+            "opencode_available": False,
+            "providers": {"claude": False, "chatgpt": False, "copilot": False},
+            "error": str(e),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/auth/connect/{provider}")
+async def connect_provider(provider: str):
+    """
+    Trigger OAuth authentication for an OpenCode provider.
+
+    Args:
+        provider: Provider to authenticate ('claude', 'chatgpt', 'copilot')
+
+    Returns:
+        Status message - auth will complete in browser
+    """
+    if provider not in ["claude", "chatgpt", "copilot"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid provider: {provider}. Use 'claude', 'chatgpt', or 'copilot'",
+        )
+
+    try:
+        from ai_providers.opencode import OpenCodeProvider
+
+        opencode = OpenCodeProvider()
+        result = await opencode.trigger_auth(provider)
+
+        if result["status"] == "error":
+            raise HTTPException(status_code=500, detail=result["message"])
+
+        return result
+
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=f"OpenCode not available: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -224,3 +224,99 @@ class OpenCodeProvider(AIProvider):
         """Cleanup OpenCode resources"""
         # No persistent connections to close
         pass
+
+    async def get_auth_status(self) -> Dict[str, bool]:
+        """
+        Check which AI providers are authenticated via OpenCode
+
+        Returns:
+            Dict with provider names and their auth status
+        """
+        status = {
+            "claude": False,
+            "chatgpt": False,
+            "copilot": False,
+        }
+
+        try:
+            # Run opencode auth status command
+            process = await asyncio.create_subprocess_exec(
+                self.opencode_path,
+                "auth",
+                "status",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            stdout, _ = await process.communicate()
+            output = stdout.decode().lower()
+
+            # Parse output for auth status
+            # Adjust based on actual opencode output format
+            if "anthropic" in output and "authenticated" in output:
+                status["claude"] = True
+            if "openai" in output and "authenticated" in output:
+                status["chatgpt"] = True
+            if "github" in output and "authenticated" in output:
+                status["copilot"] = True
+
+            logger.info(f"OpenCode auth status: {status}")
+
+        except FileNotFoundError:
+            logger.warning("OpenCode not found for auth status check")
+        except Exception as e:
+            logger.error(f"Failed to check OpenCode auth status: {e}")
+
+        return status
+
+    async def trigger_auth(self, provider: str) -> Dict[str, str]:
+        """
+        Trigger OAuth flow for a provider
+
+        Args:
+            provider: Provider to authenticate ('claude', 'chatgpt', 'copilot')
+
+        Returns:
+            Dict with status message and optional auth URL
+        """
+        provider_map = {
+            "claude": "anthropic",
+            "chatgpt": "openai",
+            "copilot": "github",
+        }
+
+        if provider not in provider_map:
+            return {"status": "error", "message": f"Unknown provider: {provider}"}
+
+        opencode_provider = provider_map[provider]
+
+        try:
+            # Run opencode auth command - this typically opens browser
+            # Use DEVNULL to avoid blocking on pipe buffers since we don't wait/read
+            process = await asyncio.create_subprocess_exec(
+                self.opencode_path,
+                "auth",
+                opencode_provider,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+
+            # Fire and forget, but ensure process is reaped
+            asyncio.create_task(process.wait())
+
+            # Don't wait for completion - auth is interactive
+            # Return immediately, user will complete in browser
+            return {
+                "status": "started",
+                "message": f"Authentication started for {provider}. Complete in your browser.",
+                "provider": provider,
+            }
+
+        except FileNotFoundError:
+            return {
+                "status": "error",
+                "message": f"OpenCode not found at {self.opencode_path}",
+            }
+        except Exception as e:
+            logger.error(f"Failed to trigger OpenCode auth: {e}")
+            return {"status": "error", "message": str(e)}

@@ -13,6 +13,8 @@ signal ai_response_received(data: Dictionary)
 signal ai_chat_received(data: Dictionary)
 signal ai_completion_received(data: Dictionary)
 signal ai_commit_message_received(data: Dictionary)
+signal auth_status_received(data: Dictionary)
+signal auth_trigger_received(data: Dictionary)
 
 # Signals - Index Operations
 signal index_completed(data: Dictionary)
@@ -228,6 +230,14 @@ func generate_commit_message(staged_files: Array, diff_content: String = "") -> 
 		"mode": _get_safe_ai_mode()
 	}
 	return _make_post_request("/ai/generate/commit-message", body, "ai_commit_message")
+
+
+func check_auth_status() -> int:
+	return _make_get_request("/ai/auth/status", "auth_status")
+
+
+func connect_provider(provider: String) -> int:
+	return _make_post_request("/ai/auth/connect/" + provider, {}, "auth_connect")
 
 
 # Public Methods - Index Operations
@@ -535,6 +545,10 @@ func _route_response(request_type: String, data: Dictionary) -> void:
 			ai_completion_received.emit(data)
 		"ai_commit_message":
 			ai_commit_message_received.emit(data)
+		"auth_status":
+			auth_status_received.emit(data)
+		"auth_connect":
+			auth_trigger_received.emit(data)
 
 		# Index operations
 		"index":
@@ -679,13 +693,13 @@ func _handle_editor_action(data: Dictionary) -> void:
 	var request_id: String = data.get("request_id", "")
 	var action: String = data.get("action", "")
 	var action_data: Dictionary = data.get("data", {})
-	
+
 	if not _editor_actions:
 		_send_editor_response(request_id, {"error": "EditorActions not initialized"})
 		return
-	
+
 	var result: Dictionary = {}
-	
+
 	# Route to appropriate EditorActions method
 	match action:
 		"create_node":
@@ -771,15 +785,18 @@ func _handle_editor_action(data: Dictionary) -> void:
 			else:
 				result = {"error": "Invalid spacing array"}
 		"spawn_random_in_area":
-			var bounds_min = action_data.get("bounds_min", [0, 0, 0])
-			var bounds_max = action_data.get("bounds_max", [10, 0, 10])
-			if bounds_min is Array and bounds_min.size() >= 3 and bounds_max is Array and bounds_max.size() >= 3:
+			var b_min = action_data.get("bounds_min", [0, 0, 0])
+			var b_max = action_data.get("bounds_max", [10, 0, 10])
+			var valid_min = b_min is Array and b_min.size() >= 3
+			var valid_max = b_max is Array and b_max.size() >= 3
+
+			if valid_min and valid_max:
 				result = _editor_actions.spawn_random_in_area(
 					action_data.get("parent_path", ""),
 					action_data.get("node_class", ""),
 					action_data.get("count", 1),
-					Vector3(bounds_min[0], bounds_min[1], bounds_min[2]),
-					Vector3(bounds_max[0], bounds_max[1], bounds_max[2]),
+					Vector3(b_min[0], b_min[1], b_min[2]),
+					Vector3(b_max[0], b_max[1], b_max[2]),
 					action_data.get("name_prefix", "Scatter")
 				)
 			else:
@@ -800,10 +817,10 @@ func _handle_editor_action(data: Dictionary) -> void:
 			result = _editor_actions.undo_last()
 		_:
 			result = {"error": "Unknown action: " + action}
-	
+
 	# Send response back to backend
 	_send_editor_response(request_id, result)
-	
+
 	# Emit signal for local listeners
 	if result.get("success", false):
 		editor_action_completed.emit(action, result)
@@ -815,12 +832,12 @@ func _send_editor_response(request_id: String, result: Dictionary) -> void:
 	"""Send editor action response back to backend"""
 	if not _ws_connected:
 		return
-	
+
 	var response := {
 		"type": "editor_response",
 		"request_id": request_id,
 		"result": result
 	}
-	
+
 	var json_string := JSON.stringify(response)
 	_ws_client.send_text(json_string)

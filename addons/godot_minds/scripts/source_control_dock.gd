@@ -1,3 +1,4 @@
+# gdlint: ignore=max-file-lines
 @tool
 class_name SourceControlDock
 extends Control
@@ -273,7 +274,7 @@ func _on_git_status_received(data: Dictionary) -> void:
 	if data.has("added") and data.has("removed") and data.has("changed"):
 		_handle_delta_response(data)
 		return
-	
+
 	# Validate full response structure
 	if not data.has("files") or not data.has("branch"):
 		push_error("[SourceControlDock] Invalid git status response: missing required fields")
@@ -295,31 +296,31 @@ func _handle_delta_response(data: Dictionary) -> void:
 	var changed: Array = data.get("changed", [])
 	var is_full_refresh: bool = data.get("is_full_refresh", false)
 	var branch: String = data.get("branch", "")
-	
+
 	# Update branch label
 	if not branch.is_empty():
 		branch_label.text = "Branch: %s" % branch
-	
+
 	# If full refresh, treat as normal status response (first request or session expired)
 	if is_full_refresh:
 		var files := added  # All files are in 'added' for full refresh
 		_populate_tree({"files": files, "branch": branch})
 		return
-	
+
 	# If no changes at all, skip update
 	if added.is_empty() and removed.is_empty() and changed.is_empty():
 		return
-	
+
 	var root := file_tree.get_root()
 	if not root or root.get_child_count() < 2:
 		# Tree not initialized yet, fall back to full refresh
 		var all_files := added + changed
 		_populate_tree({"files": all_files, "branch": branch})
 		return
-	
+
 	var staged_category := root.get_child(0)
 	var unstaged_category := root.get_child(1)
-	
+
 	# Remove deleted files
 	for path in removed:
 		if _tree_item_cache.has(path):
@@ -330,42 +331,42 @@ func _handle_delta_response(data: Dictionary) -> void:
 		_last_file_set.erase(path)
 		_staged_files.erase(path)
 		_unstaged_files.erase(path)
-	
+
 	# Add/update files (added + changed)
 	var all_updates := added + changed
 	for file_data in all_updates:
 		var file_path: String = file_data.get("path", "")
 		var staged: bool = file_data.get("staged", false)
-		
+
 		_last_file_set[file_path] = file_data
-		
+
 		if staged:
 			_staged_files[file_path] = file_data
 			_unstaged_files.erase(file_path)
 		else:
 			_unstaged_files[file_path] = file_data
 			_staged_files.erase(file_path)
-		
+
 		# Remove old tree item if exists (may need to move categories)
 		if _tree_item_cache.has(file_path):
 			var old_item: TreeItem = _tree_item_cache[file_path]
 			if old_item:
 				old_item.free()
 			_tree_item_cache.erase(file_path)
-		
+
 		# Create new tree item in correct category
 		var parent_category := staged_category if staged else unstaged_category
 		var item := _create_file_item(file_data, parent_category, staged)
 		_tree_item_cache[file_path] = item
-	
+
 	# Update category labels
 	staged_category.set_text(0, "Staged Changes (%d)" % _staged_files.size())
 	unstaged_category.set_text(0, "Unstaged Changes (%d)" % _unstaged_files.size())
-	
+
 	# Update file count
 	var total_files := _staged_files.size() + _unstaged_files.size()
 	file_count_label.text = "%d files" % total_files
-	
+
 	# Update hash to prevent redundant rebuilds if next response is full status
 	_last_status_hash = hash("%s:%d:%d:%d" % [
 		branch,
@@ -373,7 +374,7 @@ func _handle_delta_response(data: Dictionary) -> void:
 		_staged_files.size(),
 		_unstaged_files.size()
 	])
-	
+
 	_update_button_states()
 	status_refreshed.emit(total_files)
 
@@ -562,18 +563,18 @@ func _populate_tree_full_rebuild(files: Array, data: Dictionary, original_file_c
 	# Pre-sort files to reduce tree rebalancing (staged first, then unstaged)
 	var staged_files_list: Array = []
 	var unstaged_files_list: Array = []
-	
+
 	for file_data in files:
 		var file_path: String = file_data.get("path", "")
 		_last_file_set[file_path] = file_data
-		
+
 		if file_data.get("staged", false):
 			staged_files_list.append(file_data)
 			_staged_files[file_path] = file_data
 		else:
 			unstaged_files_list.append(file_data)
 			_unstaged_files[file_path] = file_data
-	
+
 	# Add items in batch (all staged, then all unstaged)
 	for file_data in staged_files_list:
 		var file_path: String = file_data.get("path", "")

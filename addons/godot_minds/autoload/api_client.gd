@@ -1,5 +1,5 @@
+# gdlint: ignore=max-public-methods
 extends Node
-# gdlint:ignore = max-public-methods
 
 # Signals - Git Operations
 signal git_status_received(data: Dictionary)

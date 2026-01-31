@@ -76,7 +76,7 @@ class GitChangeHandler(FileSystemEventHandler):
         with self.lock:
             if self._stopped:
                 return
-            
+
             current_time = time.time()
             self.last_change_time = current_time
             self.pending_broadcast = True
@@ -241,7 +241,7 @@ class GitWatcherService:
         # Cancel pending broadcasts first
         if self.handler:
             self.handler.cancel()
-        
+
         if self.observer:
             try:
                 self.observer.stop()
@@ -250,7 +250,7 @@ class GitWatcherService:
                 logger.warning(f"Error stopping observer: {e}")
             finally:
                 self.observer = None
-        
+
         self.handler = None
         self.watching = False
         logger.info("Stopped watching git repository")

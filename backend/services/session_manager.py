@@ -61,7 +61,7 @@ class SessionManager:
                 to_remove = max(1, len(sorted_sessions) // 10)
                 for key, _ in sorted_sessions[:to_remove]:
                     del self._sessions[key]
-        
+
         self._sessions[client_id] = {"status": status, "timestamp": time.time()}
 
     def cleanup_expired(self) -> int:

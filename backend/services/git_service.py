@@ -90,23 +90,26 @@ class GitService:
                     status_code = line[:2]
                     file_path = line[3:]
 
-                    # Parse status codes
-                    staged = False
-                    status = "??"
+                    # Parse status codes (index vs working tree)
+                    # status_code[0] = staging area (index)
+                    # status_code[1] = working tree
 
+                    # Add staged changes (if any)
                     if status_code[0] != " " and status_code[0] != "?":
-                        staged = True
-                        status = status_code[0]
-                    elif status_code[1] != " ":
-                        staged = False
-                        status = status_code[1]
-                    elif status_code == "??":
-                        staged = False
-                        status = "??"
+                        files.append(
+                            FileStatus(path=file_path, status=status_code[0], staged=True)
+                        )
 
-                    files.append(
-                        FileStatus(path=file_path, status=status, staged=staged)
-                    )
+                    # Add unstaged changes (if any)
+                    if status_code[1] != " ":
+                        files.append(
+                            FileStatus(path=file_path, status=status_code[1], staged=False)
+                        )
+                    elif status_code == "??":
+                        # Untracked files
+                        files.append(
+                            FileStatus(path=file_path, status="??", staged=False)
+                        )
         except GitCommandError:
             # Fallback to old method if porcelain fails
             files = self._fetch_status_fallback()

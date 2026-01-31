@@ -12,55 +12,61 @@ const EditorActionsClass := preload("res://addons/godot_minds/scripts/editor_act
 # References
 var _source_control_dock: Control
 var _editor_actions = null  # EditorActions instance
+var _api_client: Node = null  # API client instance (editor-only)
+var _settings_manager: Node = null  # Settings manager instance (editor-only)
 
 
 func _enter_tree() -> void:
-	# Register autoloads (settings manager first, then API client)
-	add_autoload_singleton(
-		SETTINGS_AUTOLOAD,
-		"res://addons/godot_minds/autoload/settings_manager.gd"
-	)
-
-	add_autoload_singleton(
-		API_CLIENT_AUTOLOAD,
-		"res://addons/godot_minds/autoload/api_client.gd"
-	)
-
 	print("[Godot-Minds] Plugin enabled")
 
-	# Wait a frame for autoloads to initialize
-	await get_tree().process_frame
+	# Create editor-only instances of services (don't use autoloads for editor functionality)
+	_create_services()
 
-	# Verify autoloads were registered successfully
-	if not _verify_autoloads_registered():
-		push_error("[Godot-Minds] Failed to register autoloads. Plugin may not function correctly.")
+	# Defer initialization to after editor is ready
+	call_deferred("_initialize_plugin")
+
+
+func _initialize_plugin() -> void:
+	print("[Godot-Minds] Initializing plugin...")
+
+	# Verify services were created
+	if not _settings_manager or not _api_client:
+		push_error("[Godot-Minds] Services not created!")
 		return
 
-	var msg := "[Godot-Minds] Autoloads registered: %s, %s"
-	print(msg % [SETTINGS_AUTOLOAD, API_CLIENT_AUTOLOAD])
+	print("[Godot-Minds] Services ready!")
+	_complete_initialization()
+
+func _complete_initialization() -> void:
+	"""Complete plugin initialization with services ready"""
+	print("[Godot-Minds] Completing plugin initialization...")
+
 	print("[Godot-Minds] Server URL: ", _get_server_url())
 
 	# Initialize EditorActions and register with API client
 	_editor_actions = EditorActionsClass.new(self)
-	var api_client := get_node_or_null("/root/" + API_CLIENT_AUTOLOAD)
-	if api_client and api_client.has_method("set_editor_actions"):
-		api_client.set_editor_actions(_editor_actions)
+	if _api_client and _api_client.has_method("set_editor_actions"):
+		_api_client.set_editor_actions(_editor_actions)
 		print("[Godot-Minds] EditorActions registered with API client")
-	else:
-		push_warning("[Godot-Minds] Could not register EditorActions with API client")
 
-	# Add Source Control dock
+	# Add Source Control dock and pass service references
 	var DockScene := preload("res://addons/godot_minds/scenes/source_control_dock.tscn")
 	_source_control_dock = DockScene.instantiate()
+
+	# Inject services into the dock
+	if _source_control_dock.has_method("set_services"):
+		_source_control_dock.set_services(_api_client, _settings_manager)
+
 	add_control_to_dock(DOCK_SLOT_RIGHT_BL, _source_control_dock)
 	print("[Godot-Minds] Source Control dock added")
+	print("[Godot-Minds] ✓ Plugin fully initialized!")
 
 
 func _exit_tree() -> void:
 	# Clean up editor actions reference
 	if _editor_actions:
-		var api_client := get_node_or_null("/root/" + API_CLIENT_AUTOLOAD)
-		if api_client and api_client.has_method("set_editor_actions"):
+		if _api_client and _api_client.has_method("set_editor_actions"):
+			_api_client.set_editor_actions(null)
 		_editor_actions = null
 
 	# Remove Source Control dock
@@ -70,18 +76,16 @@ func _exit_tree() -> void:
 		_source_control_dock = null
 		print("[Godot-Minds] Source Control dock removed")
 
-	# Remove autoloads in reverse order
-	remove_autoload_singleton(API_CLIENT_AUTOLOAD)
-	remove_autoload_singleton(SETTINGS_AUTOLOAD)
+	# Clean up services
+	if _api_client:
+		_api_client.queue_free()
+		_api_client = null
 
-	# Verify autoloads were removed successfully
-	await get_tree().process_frame
+	if _settings_manager:
+		_settings_manager.queue_free()
+		_settings_manager = null
 
-	if _verify_autoloads_registered():
-		push_warning("[Godot-Minds] Autoloads may not have been removed completely")
-	else:
-		print("[Godot-Minds] Autoloads removed successfully")
-
+	print("[Godot-Minds] Services cleaned up")
 	print("[Godot-Minds] Plugin disabled")
 
 
@@ -89,31 +93,37 @@ func _get_plugin_name() -> String:
 	return "Godot-Minds"
 
 
-func _verify_autoloads_registered() -> bool:
-	# Check if both autoloads exist in the scene tree
-	var settings_path := "/root/" + SETTINGS_AUTOLOAD
-	var api_path := "/root/" + API_CLIENT_AUTOLOAD
+func _create_services() -> void:
+	"""Create editor-only instances of API client and settings manager"""
+	print("[Godot-Minds] Creating editor services...")
 
-	var settings_exists := has_node(settings_path)
-	var api_exists := has_node(api_path)
+	# Load and instantiate settings manager
+	var SettingsScript := preload("res://addons/godot_minds/autoload/settings_manager.gd")
+	_settings_manager = SettingsScript.new()
+	add_child(_settings_manager)
 
-	if not settings_exists:
-		push_error("[Godot-Minds] Settings autoload not found at: %s" % settings_path)
+	# Inject EditorSettings (only available in EditorPlugin context)
+	if _settings_manager.has_method("set_editor_settings"):
+		_settings_manager.set_editor_settings(get_editor_interface().get_editor_settings())
 
-	if not api_exists:
-		push_error("[Godot-Minds] API client autoload not found at: %s" % api_path)
+	# Load and instantiate API client
+	var APIScript := preload("res://addons/godot_minds/autoload/api_client.gd")
+	_api_client = APIScript.new()
+	add_child(_api_client)
 
-	return settings_exists and api_exists
+	# Inject settings manager into API client
+	if _api_client.has_method("set_settings_manager"):
+		_api_client.set_settings_manager(_settings_manager)
+
+	print("[Godot-Minds] Services created successfully")
+
+
 
 
 func _get_server_url() -> String:
-	# Try to get server URL from settings manager if available
-	var autoload_path := "/root/" + SETTINGS_AUTOLOAD
+	# Get server URL from settings manager instance
+	if _settings_manager and _settings_manager.has_method("get_server_url"):
+		return _settings_manager.get_server_url()
 
-	if has_node(autoload_path):
-		var settings := get_node(autoload_path)
-		if settings and settings.has_method("get_server_url"):
-			return settings.get_server_url()
-
-	# Fallback to default if autoload is not ready yet
+	# Fallback to default
 	return "http://127.0.0.1:8005"

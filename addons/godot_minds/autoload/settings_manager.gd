@@ -24,12 +24,13 @@ const SETTING_API_KEY_OPENCODE := SETTINGS_PREFIX + "api_keys/opencode"
 const SETTING_POLLING_INTERVAL := SETTINGS_PREFIX + "ui/polling_interval"
 
 # Private variables
-var _editor_settings: EditorSettings
+var _editor_settings = null  # EditorSettings (injected by plugin)
 
 
 func _ready() -> void:
-	_initialize_editor_settings()
-	_initialize_settings()
+	# Don't initialize editor settings here - EditorInterface isn't available yet
+	# Will be initialized lazily when first accessed
+	print("[GodotMindsSettings] _ready() called - autoload is initializing")
 
 
 func _exit_tree() -> void:
@@ -114,8 +115,10 @@ func set_polling_interval(interval: float) -> void:
 
 
 func get_setting(setting_path: String, default_value: Variant) -> Variant:
+	_ensure_editor_settings()
+
 	if not _editor_settings:
-		push_error("EditorSettings not available")
+		# EditorSettings still not available, return default
 		return default_value
 
 	if _editor_settings.has_setting(setting_path):
@@ -125,6 +128,8 @@ func get_setting(setting_path: String, default_value: Variant) -> Variant:
 
 
 func set_setting(setting_path: String, value: Variant) -> void:
+	_ensure_editor_settings()
+
 	if not _editor_settings:
 		push_error("EditorSettings not available")
 		return
@@ -135,11 +140,26 @@ func set_setting(setting_path: String, value: Variant) -> void:
 
 # Private Methods
 
-func _initialize_editor_settings() -> void:
-	_editor_settings = EditorInterface.get_editor_settings()
+func set_editor_settings(editor_settings) -> void:
+	"""Called by plugin to inject EditorSettings (EditorInterface not accessible from autoloads)"""
+	_editor_settings = editor_settings
+	if _editor_settings:
+		_initialize_settings()
+		print("[GodotMindsSettings] EditorSettings initialized")
 
-	if not _editor_settings:
-		push_error("Failed to get EditorSettings from EditorInterface")
+
+func _ensure_editor_settings() -> void:
+	"""Lazy initialization of editor settings - call this before accessing settings"""
+	if _editor_settings:
+		return  # Already initialized
+
+	# EditorSettings will be injected by the plugin
+	# If not available, we'll just use defaults
+
+
+func _initialize_editor_settings() -> void:
+	# Deprecated - use _ensure_editor_settings() instead
+	_ensure_editor_settings()
 
 
 func _initialize_settings() -> void:

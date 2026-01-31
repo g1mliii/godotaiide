@@ -28,7 +28,8 @@
       "WebFetch(domain:github.com)",
       "Bash(ls:*)",
       "Bash(git restore:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(godot:*)"
     ]
   }
 }

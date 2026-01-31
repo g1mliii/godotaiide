@@ -1,0 +1,33 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[animation]
+
+compatibility/default_parent_skeleton_in_mesh_instance_3d=true
+
+[application]
+
+config/name="Godot-Minds AI IDE"
+run/main_scene="res://test_autoload.tscn"
+config/features=PackedStringArray("4.6", "Forward Plus")
+config/icon="res://icon.svg"
+
+[autoload]
+
+GodotMindsSettings="*uid://cr1cm6bqsnp2r"
+GodotMindsAPI="*uid://c5toeun6p2k3u"
+
+[dotnet]
+
+project/assembly_name="Godot-Minds AI IDE"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/godot_minds/plugin.cfg")

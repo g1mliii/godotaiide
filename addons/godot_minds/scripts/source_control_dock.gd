@@ -56,6 +56,9 @@ var _tree_item_cache: Dictionary = {}  # Map file_path -> TreeItem for increment
 @onready var file_tree: Tree = %FileTree
 @onready var file_count_label: Label = %FileCountLabel
 @onready var polling_timer: Timer = %PollingTimer
+@onready var stage_button: Button = %StageButton
+@onready var unstage_button: Button = %UnstageButton
+@onready var revert_button: Button = %RevertButton
 
 
 func _ready() -> void:
@@ -67,6 +70,7 @@ func _ready() -> void:
 	_connect_signals()
 	_setup_tree()
 	_setup_polling()
+	_update_file_action_button_states()  # Initialize button states
 	refresh_status()
 
 
@@ -97,8 +101,19 @@ func _exit_tree() -> void:
 	if commit_message_edit:
 		if commit_message_edit.text_changed.is_connected(_on_commit_message_text_changed):
 			commit_message_edit.text_changed.disconnect(_on_commit_message_text_changed)
-	if file_tree and file_tree.item_activated.is_connected(_on_file_tree_item_activated):
-		file_tree.item_activated.disconnect(_on_file_tree_item_activated)
+	if file_tree:
+		if file_tree.item_activated.is_connected(_on_file_tree_item_activated):
+			file_tree.item_activated.disconnect(_on_file_tree_item_activated)
+		if file_tree.item_selected.is_connected(_on_file_tree_item_selected):
+			file_tree.item_selected.disconnect(_on_file_tree_item_selected)
+
+	if stage_button and stage_button.pressed.is_connected(_on_stage_button_pressed):
+		stage_button.pressed.disconnect(_on_stage_button_pressed)
+	if unstage_button and unstage_button.pressed.is_connected(_on_unstage_button_pressed):
+		unstage_button.pressed.disconnect(_on_unstage_button_pressed)
+	if revert_button and revert_button.pressed.is_connected(_on_revert_button_pressed):
+		revert_button.pressed.disconnect(_on_revert_button_pressed)
+
 	if polling_timer and polling_timer.timeout.is_connected(_on_polling_timer_timeout):
 		polling_timer.timeout.disconnect(_on_polling_timer_timeout)
 
@@ -159,12 +174,17 @@ func _load_icons() -> void:
 	_icon_check = load("res://addons/godot_minds/icons/lucide/check.svg")
 
 
-func _initialize_api_client() -> void:
-	_api_client = get_node_or_null("/root/GodotMindsAPI")
-	_settings = get_node_or_null("/root/GodotMindsSettings")
+func set_services(api_client: Node, settings: Node) -> void:
+	"""Called by plugin to inject service references"""
+	_api_client = api_client
+	_settings = settings
+	print("[SourceControlDock] Services injected")
 
+
+func _initialize_api_client() -> void:
+	# Services are now injected by the plugin, not looked up as autoloads
 	if not _api_client:
-		push_error("[SourceControlDock] API client not found")
+		push_error("[SourceControlDock] API client not provided")
 		return
 
 	print("[SourceControlDock] Initialized with API client")
@@ -208,8 +228,14 @@ func _connect_signals() -> void:
 	commit_button.pressed.connect(_on_commit_button_pressed)
 	ai_message_button.pressed.connect(_on_ai_message_button_pressed)
 	commit_message_edit.text_changed.connect(_on_commit_message_text_changed)  # Debounced handler
-	file_tree.item_activated.connect(_on_file_tree_item_activated)
+	file_tree.item_activated.connect(_on_file_tree_item_activated)  # Double-click
+	file_tree.item_selected.connect(_on_file_tree_item_selected)  # Selection changed
 	polling_timer.timeout.connect(_on_polling_timer_timeout)
+
+	# File action buttons
+	stage_button.pressed.connect(_on_stage_button_pressed)
+	unstage_button.pressed.connect(_on_unstage_button_pressed)
+	revert_button.pressed.connect(_on_revert_button_pressed)
 
 
 func _setup_tree() -> void:
@@ -217,6 +243,7 @@ func _setup_tree() -> void:
 	file_tree.set_column_expand(1, false)  # Status badge column
 	file_tree.set_column_custom_minimum_width(1, 50)
 	file_tree.hide_root = true
+	file_tree.select_mode = Tree.SELECT_ROW  # Enable row selection
 
 
 func _setup_polling() -> void:
@@ -284,8 +311,21 @@ func _populate_tree(data: Dictionary) -> void:
 		files = files.slice(0, MAX_FILES)
 
 	# Hash-based change detection - only rebuild if data changed
-	# Hash only critical fields instead of entire data structure for performance
-	var status_hash := hash("%s:%d" % [data.get("branch", ""), files.size()])
+	# Include both file count and staged/unstaged breakdown in hash
+	var staged_count := 0
+	var unstaged_count := 0
+	for file_data in files:
+		if file_data.get("staged", false):
+			staged_count += 1
+		else:
+			unstaged_count += 1
+
+	var status_hash := hash("%s:%d:%d:%d" % [
+		data.get("branch", ""),
+		files.size(),
+		staged_count,
+		unstaged_count
+	])
 	if status_hash == _last_status_hash:
 		return  # No changes, skip rebuild
 	_last_status_hash = status_hash
@@ -460,23 +500,24 @@ func _create_file_item(file_data: Dictionary, parent: TreeItem, staged: bool) ->
 	var file_path: String = file_data.get("path", "")
 	var status: String = file_data.get("status", "M")
 
+	# Normalize status display (convert ?? to U for untracked)
+	var display_status := "U" if status == "??" else status
+
 	# Get icon and color for status
 	var status_display := _get_status_display(status)
 
-	# Column 0: Checkbox + File path + Icon
-	item.set_cell_mode(0, TreeItem.CELL_MODE_CHECK)
-	item.set_checked(0, staged)
-	item.set_editable(0, true)
-	item.set_text(0, "  " + file_path)
+	# Column 0: File path + Icon (no checkbox - use buttons instead)
+	item.set_text(0, file_path)
 	item.set_icon(0, status_display.icon)
 	item.set_icon_modulate(0, status_display.color)
+	item.set_selectable(0, true)
 
-	# Column 1: Status badge
-	item.set_text(1, status)
+	# Column 1: Status badge (show U instead of ??)
+	item.set_text(1, display_status)
 	item.set_text_alignment(1, HORIZONTAL_ALIGNMENT_CENTER)
 
-	# Store file path for event handlers
-	item.set_metadata(0, file_path)
+	# Store file path and staged state for event handlers
+	item.set_metadata(0, {"path": file_path, "staged": staged})
 
 	return item
 
@@ -490,7 +531,7 @@ func _get_status_display(status: String) -> Dictionary:
 			return {"icon": _icon_file_plus, "color": COLOR_ADDED}
 		"D":
 			return {"icon": _icon_file_minus, "color": COLOR_DELETED}
-		"??":
+		"??", "U":  # Untracked files
 			return {"icon": _icon_file_plus, "color": COLOR_UNTRACKED}
 		_:
 			return {"icon": _icon_file, "color": Color.WHITE}
@@ -498,24 +539,135 @@ func _get_status_display(status: String) -> Dictionary:
 
 # File Staging
 
+func _on_file_tree_item_selected() -> void:
+	"""Called when selection changes - update button states"""
+	_update_file_action_button_states()
+
+
 func _on_file_tree_item_activated() -> void:
+	"""Called when item is double-clicked - open file in editor"""
 	var selected := file_tree.get_selected()
 	if not selected or not selected.get_metadata(0):
 		return
 
-	var file_path: String = selected.get_metadata(0)
-	var is_checked := selected.is_checked(0)
+	var metadata: Dictionary = selected.get_metadata(0)
+	var file_path: String = metadata.get("path", "")
 
-	if is_checked:
+	if file_path.is_empty():
+		return
+
+	# Open file in editor
+	var editor_interface := EditorInterface
+	if editor_interface:
+		var full_path := "res://" + file_path
+		editor_interface.edit_script(load(full_path))
+		print("[SourceControlDock] Opening file: %s" % full_path)
+
+
+func _on_stage_button_pressed() -> void:
+	"""Stage selected files"""
+	print("[SourceControlDock] Stage button clicked")
+
+	var selected := file_tree.get_selected()
+	if not selected:
+		print("[SourceControlDock] No file selected")
+		return
+
+	if not selected.get_metadata(0):
+		print("[SourceControlDock] No metadata on selected item")
+		return
+
+	var metadata: Dictionary = selected.get_metadata(0)
+	var file_path: String = metadata.get("path", "")
+	var is_staged: bool = metadata.get("staged", false)
+
+	print("[SourceControlDock] File: %s, Staged: %s" % [file_path, is_staged])
+
+	if not is_staged:
 		stage_file(file_path)
 	else:
+		print("[SourceControlDock] File already staged")
+
+
+func _on_unstage_button_pressed() -> void:
+	"""Unstage selected files"""
+	print("[SourceControlDock] Unstage button clicked")
+
+	var selected := file_tree.get_selected()
+	if not selected:
+		print("[SourceControlDock] No file selected")
+		return
+
+	if not selected.get_metadata(0):
+		print("[SourceControlDock] No metadata on selected item")
+		return
+
+	var metadata: Dictionary = selected.get_metadata(0)
+	var file_path: String = metadata.get("path", "")
+	var is_staged: bool = metadata.get("staged", false)
+
+	print("[SourceControlDock] File: %s, Staged: %s" % [file_path, is_staged])
+
+	if is_staged:
 		unstage_file(file_path)
+	else:
+		print("[SourceControlDock] File not staged")
+
+
+func _on_revert_button_pressed() -> void:
+	"""Revert selected file to HEAD"""
+	var selected := file_tree.get_selected()
+	if not selected or not selected.get_metadata(0):
+		return
+
+	var metadata: Dictionary = selected.get_metadata(0)
+	var file_path: String = metadata.get("path", "")
+
+	# Show confirmation dialog
+	var dialog := ConfirmationDialog.new()
+	dialog.dialog_text = "Discard all changes to '%s'?\nThis cannot be undone!" % file_path
+	dialog.title = "Revert File"
+	add_child(dialog)
+
+	dialog.confirmed.connect(func():
+		var files := PackedStringArray([file_path])
+		_api_client.git_restore_files(files)
+		dialog.queue_free()
+	)
+
+	dialog.close_requested.connect(dialog.queue_free)
+	dialog.popup_centered()
+
+
+func _update_file_action_button_states() -> void:
+	"""Enable/disable file action buttons based on selection"""
+	var selected := file_tree.get_selected()
+
+	if not selected or not selected.get_metadata(0):
+		stage_button.disabled = true
+		unstage_button.disabled = true
+		revert_button.disabled = true
+		return
+
+	var metadata: Dictionary = selected.get_metadata(0)
+	var is_staged: bool = metadata.get("staged", false)
+
+	# Stage button: enabled for unstaged files
+	stage_button.disabled = is_staged
+
+	# Unstage button: enabled for staged files
+	unstage_button.disabled = not is_staged
+
+	# Revert button: always enabled for selected files
+	revert_button.disabled = false
 
 
 func stage_file(file_path: String) -> void:
 	if _is_operation_pending:
+		print("[SourceControlDock] Cannot stage - operation pending")
 		return
 
+	print("[SourceControlDock] Staging file: %s" % file_path)
 	_is_operation_pending = true
 	var files := PackedStringArray([file_path])
 	_api_client.git_add_files(files)
@@ -523,8 +675,10 @@ func stage_file(file_path: String) -> void:
 
 func unstage_file(file_path: String) -> void:
 	if _is_operation_pending:
+		print("[SourceControlDock] Cannot unstage - operation pending")
 		return
 
+	print("[SourceControlDock] Unstaging file: %s" % file_path)
 	_is_operation_pending = true
 	var files := PackedStringArray([file_path])
 	_api_client.git_restore_files(files)
@@ -585,6 +739,7 @@ func _has_staged_files() -> bool:
 
 
 func _on_git_operation_completed(operation: String, success: bool, message: String) -> void:
+	print("[SourceControlDock] Git operation completed: %s, success: %s" % [operation, success])
 	_is_operation_pending = false
 
 	match operation:
@@ -602,7 +757,10 @@ func _on_git_operation_completed(operation: String, success: bool, message: Stri
 			refresh_status()
 
 		"git_add", "git_restore":
-			if not success:
+			if success:
+				print("[SourceControlDock] Stage/unstage successful, refreshing...")
+			else:
+				print("[SourceControlDock] Stage/unstage failed: %s" % message)
 				_show_alert("Failed: %s" % message, "Git Operation Failed")
 			refresh_status()
 
@@ -623,18 +781,22 @@ func _on_polling_timer_timeout() -> void:
 func refresh_status() -> void:
 	# Atomic check: all conditions checked together to prevent race conditions
 	if not _api_client or _is_operation_pending or not _is_polling_active:
+		print("[SourceControlDock] Refresh blocked - api:%s pending:%s polling:%s" % [
+			_api_client != null, _is_operation_pending, _is_polling_active
+		])
 		return
 
 	# Debounce refreshes: queue if called too frequently (last call wins)
 	var now := Time.get_ticks_msec() / 1000.0
 	if now - _last_refresh_time < 1.0:
+		print("[SourceControlDock] Refresh debounced (too soon)")
 		# Queue refresh to execute after debounce delay
 		_refresh_queued = true
 		if _refresh_debounce_timer:
 			_refresh_debounce_timer.start()
 		return
 
-	# Execute refresh immediately
+	# Execute refresh immediately (don't log polls, only manual refreshes)
 	_refresh_queued = false
 	_last_refresh_time = now
 	_api_client.get_git_status()

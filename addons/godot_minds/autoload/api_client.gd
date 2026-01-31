@@ -1,5 +1,5 @@
-# gdlint:ignore = max-public-methods
 extends Node
+# gdlint:ignore = max-public-methods
 
 # Signals - Git Operations
 signal git_status_received(data: Dictionary)
@@ -64,12 +64,14 @@ var _json_parser: JSON
 
 
 func _ready() -> void:
+	print("[GodotMindsAPI] _ready() called - starting initialization")
 	_json_parser = JSON.new()  # Reusable parser
 	_initialize_settings_cache()
 	_initialize_urls()
 	_initialize_websocket()
 	# Enable process for timeout monitoring
 	set_process(true)
+	print("[GodotMindsAPI] _ready() completed successfully")
 
 
 func _exit_tree() -> void:
@@ -356,14 +358,23 @@ func ask_ai_stream(prompt: String, context: String = "") -> void:
 
 # Private Methods - Initialization
 
+func set_settings_manager(settings_manager: Node) -> void:
+	"""Inject settings manager reference (for editor plugin use)"""
+	_settings_node = settings_manager
+	if _settings_node and _settings_node.has_method("get_ai_mode"):
+		_cached_ai_mode = _settings_node.get_ai_mode()
+
+
 func _initialize_settings_cache() -> void:
 	"""Cache settings node to avoid repeated lookups"""
+	# Settings manager will be injected by plugin or found as autoload
+	if _settings_node:
+		return  # Already set via injection
+
 	if has_node("/root/GodotMindsSettings"):
 		_settings_node = get_node("/root/GodotMindsSettings")
 		if _settings_node and _settings_node.has_method("get_ai_mode"):
 			_cached_ai_mode = _settings_node.get_ai_mode()
-	else:
-		push_warning("[GodotMindsAPI] GodotMindsSettings not found, using defaults")
 
 
 func _initialize_urls() -> void:
@@ -579,7 +590,7 @@ func _cleanup_timed_out_requests() -> void:
 	for request_id in _active_requests.keys():
 		var request_info: Dictionary = _active_requests[request_id]
 		if request_info.has("start_time"):
-			var elapsed := now - request_info.start_time
+			var elapsed: float = now - request_info.start_time
 			if elapsed > timeout_threshold:
 				timed_out_requests.append(request_id)
 				var msg := "[GodotMindsAPI] Cleaning up timed-out request %d"

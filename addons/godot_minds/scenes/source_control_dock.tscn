@@ -3,12 +3,15 @@
 [ext_resource type="Script" path="res://addons/godot_minds/scripts/source_control_dock.gd" id="1_abcde"]
 
 [node name="SourceControlDock" type="Control"]
+custom_minimum_size = Vector2(200, 300)
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 script = ExtResource("1_abcde")
 
 [node name="MainContainer" type="VBoxContainer" parent="."]
@@ -97,6 +100,31 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "0 files"
 vertical_alignment = 1
+
+[node name="FileActions" type="HBoxContainer" parent="MainContainer"]
+layout_mode = 2
+
+[node name="StageButton" type="Button" parent="MainContainer/FileActions"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Stage selected files"
+text = "Stage"
+
+[node name="UnstageButton" type="Button" parent="MainContainer/FileActions"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Unstage selected files"
+text = "Unstage"
+
+[node name="RevertButton" type="Button" parent="MainContainer/FileActions"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Discard changes in selected files"
+text = "Revert"
+
+[node name="Spacer2" type="Control" parent="MainContainer/FileActions"]
+layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="FileTree" type="Tree" parent="MainContainer"]
 unique_name_in_owner = true

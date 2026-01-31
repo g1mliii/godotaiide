@@ -1,5 +1,5 @@
 @tool
-# gdlint: ignore=max-public-methods
+# gdlint: disable=max-public-methods
 class_name EditorActions
 extends RefCounted
 ## EditorActions - Service for AI-driven editor manipulation
@@ -699,9 +699,9 @@ func _convert_dict_value(dict: Dictionary) -> Variant:
 		var type = dict.get("_type")
 		if type == "Vector2":
 			return Vector2(dict.get("x", 0), dict.get("y", 0))
-		elif type == "Vector3":
+		if type == "Vector3":
 			return Vector3(dict.get("x", 0), dict.get("y", 0), dict.get("z", 0))
-		elif type == "Color":
+		if type == "Color":
 			return Color(
 				dict.get("r", 0),
 				dict.get("g", 0),

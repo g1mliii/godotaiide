@@ -9,13 +9,11 @@ import time
 import logging
 
 from services.ai_service import AIService
+from routers import editor as editor_router
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-# Active WebSocket connections
-active_connections: Set[WebSocket] = set()
 
 # Initialize AI service for streaming
 try:
@@ -34,6 +32,7 @@ class ConnectionManager:
         self._cleanup_task: Optional[asyncio.Task] = None
         self._connection_timeout = 300  # 5 minute timeout
         self._shutdown = False
+        self._godot_connection: Optional[WebSocket] = None
 
     async def start_cleanup_task(self) -> None:
         """Start background task to cleanup stale connections"""
@@ -80,11 +79,17 @@ class ConnectionManager:
         await websocket.accept()
         self.active_connections.add(websocket)
         self.update_last_seen(websocket)
+        # Set as Godot connection for editor actions
+        self._godot_connection = websocket
+        editor_router.set_godot_connection(websocket)
 
     def disconnect(self, websocket: WebSocket):
         """Remove connection"""
         self.active_connections.discard(websocket)
         self._connection_last_seen.pop(websocket, None)
+        if self._godot_connection == websocket:
+            self._godot_connection = None
+            editor_router.clear_godot_connection()
 
     def update_last_seen(self, websocket: WebSocket):
         """Update last activity timestamp for connection"""
@@ -148,6 +153,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Heartbeat
                 await websocket.send_json({"type": "pong"})
 
+            elif message_type == "editor_response":
+                # Response from Godot plugin for editor action
+                request_id = data.get("request_id")
+                result = data.get("result", {})
+                if request_id:
+                    editor_router.handle_godot_response(request_id, result)
+
             else:
                 await websocket.send_json(
                     {
@@ -159,7 +171,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        logger.error(f"WebSocket error: {e}", exc_info=True)
         manager.disconnect(websocket)
 
 

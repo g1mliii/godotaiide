@@ -15,6 +15,7 @@ from routers import index as index_router
 from routers import watcher as watcher_router
 from routers import ai as ai_router
 from routers import websocket as websocket_router
+from routers import editor as editor_router
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ app.include_router(git_router.router, prefix="/git", tags=["git"])
 app.include_router(index_router.router, prefix="/index", tags=["index"])
 app.include_router(watcher_router.router, prefix="/watcher", tags=["watcher"])
 app.include_router(ai_router.router, prefix="/ai", tags=["ai"])
+app.include_router(editor_router.router)  # Already has /editor prefix
 app.include_router(websocket_router.router, tags=["websocket"])
 
 
@@ -85,6 +87,11 @@ async def shutdown_event():
     # Close AI service providers
     if hasattr(ai_router, "ai_service") and ai_router.ai_service:
         await ai_router.ai_service.close()
+
+    # Close tool executor HTTP client
+    from services.tool_executor import get_tool_executor
+
+    await get_tool_executor().close()
 
     # Stop file watcher
     if hasattr(watcher_router, "watcher_service") and watcher_router.watcher_service:

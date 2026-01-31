@@ -7,9 +7,18 @@ import anthropic
 from openai import AsyncOpenAI
 import google.generativeai as genai
 import asyncio
+import logging
+import json
 
 from ai_providers.base import AIProvider
 from config import settings
+from services.tool_executor import (
+    get_tools_for_anthropic,
+    get_tools_for_openai,
+    get_tool_executor,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class DirectAPIProvider(AIProvider):
@@ -97,6 +106,144 @@ class DirectAPIProvider(AIProvider):
             return response.text  # type: ignore[attr-defined]
 
         return ""
+
+    async def ask_with_tools(
+        self,
+        prompt: str,
+        context: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        max_tool_iterations: int = 5,
+    ) -> Dict[str, Any]:
+        """
+        Ask AI with tool calling support for Godot editor operations.
+
+        Args:
+            prompt: User's request
+            context: Optional context
+            system_prompt: System prompt
+            max_tool_iterations: Max rounds of tool calling
+
+        Returns:
+            Dict with 'response' text and 'tool_results' list
+        """
+        full_prompt = prompt
+        if context:
+            full_prompt = f"Context:\n```\n{context}\n```\n\n{prompt}"
+
+        tool_results: List[Dict[str, Any]] = []
+        executor = get_tool_executor()
+
+        if self.provider == "anthropic" and isinstance(
+            self.client, anthropic.AsyncAnthropic
+        ):
+            tools = get_tools_for_anthropic()
+            messages: List[Dict[str, Any]] = [{"role": "user", "content": full_prompt}]
+
+            for iteration in range(max_tool_iterations):
+                response = await self.client.messages.create(  # type: ignore[attr-defined]
+                    model=self.model,
+                    max_tokens=4096,
+                    system=system_prompt
+                    or "You are a helpful AI assistant for Godot Engine development. You have access to tools to manipulate the Godot editor directly.",
+                    messages=messages,
+                    tools=tools,
+                )
+
+                # Check for tool use
+                tool_use_blocks = [
+                    block for block in response.content if block.type == "tool_use"
+                ]
+
+                if not tool_use_blocks:
+                    # No more tool calls, extract final text
+                    text_blocks = [
+                        block.text
+                        for block in response.content
+                        if hasattr(block, "text")
+                    ]
+                    return {
+                        "response": "\n".join(text_blocks),
+                        "tool_results": tool_results,
+                    }
+
+                # Execute tool calls
+                tool_call_results = []
+                for block in tool_use_blocks:
+                    result = await executor.execute_tool(block.name, block.input)
+                    tool_results.append(
+                        {"tool": block.name, "input": block.input, "result": result}
+                    )
+                    tool_call_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": str(result),
+                        }
+                    )
+
+                # Add assistant response and tool results to messages
+                messages.append({"role": "assistant", "content": response.content})
+                messages.append({"role": "user", "content": tool_call_results})
+
+            # Max iterations reached
+            return {
+                "response": "Tool execution completed (max iterations reached)",
+                "tool_results": tool_results,
+            }
+
+        elif self.provider == "openai" and isinstance(self.client, AsyncOpenAI):
+            tools = get_tools_for_openai()
+            openai_messages: List[Dict[str, Any]] = []
+            if system_prompt:
+                openai_messages.append({"role": "system", "content": system_prompt})
+            openai_messages.append({"role": "user", "content": full_prompt})
+
+            for iteration in range(max_tool_iterations):
+                response = await self.client.chat.completions.create(  # type: ignore[call-overload]
+                    model=self.model,
+                    messages=openai_messages,
+                    max_tokens=4096,
+                    tools=tools,
+                    tool_choice="auto",
+                )
+
+                choice = response.choices[0]
+
+                if not choice.message.tool_calls:
+                    return {
+                        "response": choice.message.content or "",
+                        "tool_results": tool_results,
+                    }
+
+                # Execute tool calls
+                openai_messages.append(choice.message)
+
+                for tool_call in choice.message.tool_calls:
+                    args = json.loads(tool_call.function.arguments)
+                    result = await executor.execute_tool(tool_call.function.name, args)
+                    tool_results.append(
+                        {
+                            "tool": tool_call.function.name,
+                            "input": args,
+                            "result": result,
+                        }
+                    )
+                    openai_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": str(result),
+                        }
+                    )
+
+            return {
+                "response": "Tool execution completed (max iterations reached)",
+                "tool_results": tool_results,
+            }
+
+        # Fallback for providers without tool support
+        response = await self.ask(prompt, context, system_prompt)
+        return {"response": response, "tool_results": []}
 
     async def chat(
         self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None

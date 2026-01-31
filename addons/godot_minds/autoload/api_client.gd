@@ -23,6 +23,10 @@ signal index_cleared(success: bool)
 # Signals - Watcher Operations
 signal watcher_status_received(data: Dictionary)
 
+# Signals - Editor Actions (AI-driven editor manipulation)
+signal editor_action_completed(action: String, result: Dictionary)
+signal editor_action_failed(action: String, error: String)
+
 # Signals - WebSocket
 signal websocket_connected()
 signal websocket_disconnected()
@@ -49,6 +53,9 @@ var _ws_connected: bool = false
 # Cached settings
 var _settings_node: Node = null
 var _cached_ai_mode: String = "direct"
+
+# Editor actions service (set by plugin when available)
+var _editor_actions = null  # EditorActions instance
 
 # Reusable JSON parser to avoid allocations
 var _json_parser: JSON
@@ -652,8 +659,168 @@ func _handle_websocket_message(message: String) -> void:
 			ai_stream_token.emit(token)
 		"ai_stream_complete":
 			ai_stream_complete.emit()
+		"editor_action":
+			# Handle editor action request from backend
+			_handle_editor_action(data)
 		"error":
 			var error_msg: String = data.get("message", "Unknown WebSocket error")
 			api_error.emit(error_msg)
 		_:
 			push_warning("Unknown WebSocket message type: %s" % message_type)
+
+
+func set_editor_actions(actions) -> void:
+	"""Set the EditorActions instance (called by plugin)"""
+	_editor_actions = actions
+
+
+func _handle_editor_action(data: Dictionary) -> void:
+	"""Handle incoming editor action from backend and respond"""
+	var request_id: String = data.get("request_id", "")
+	var action: String = data.get("action", "")
+	var action_data: Dictionary = data.get("data", {})
+	
+	if not _editor_actions:
+		_send_editor_response(request_id, {"error": "EditorActions not initialized"})
+		return
+	
+	var result: Dictionary = {}
+	
+	# Route to appropriate EditorActions method
+	match action:
+		"create_node":
+			result = _editor_actions.create_node(
+				action_data.get("parent_path", ""),
+				action_data.get("node_class", ""),
+				action_data.get("node_name", ""),
+				action_data.get("properties", {})
+			)
+		"delete_node":
+			result = _editor_actions.delete_node(action_data.get("node_path", ""))
+		"rename_node":
+			result = _editor_actions.rename_node(
+				action_data.get("node_path", ""),
+				action_data.get("new_name", "")
+			)
+		"reparent_node":
+			result = _editor_actions.reparent_node(
+				action_data.get("node_path", ""),
+				action_data.get("new_parent_path", "")
+			)
+		"get_property":
+			result = _editor_actions.get_property(
+				action_data.get("node_path", ""),
+				action_data.get("property", "")
+			)
+		"set_property":
+			result = _editor_actions.set_property(
+				action_data.get("node_path", ""),
+				action_data.get("property", ""),
+				action_data.get("value")
+			)
+		"attach_resource":
+			result = _editor_actions.attach_resource(
+				action_data.get("node_path", ""),
+				action_data.get("property", ""),
+				action_data.get("resource_path", "")
+			)
+		"create_resource":
+			result = _editor_actions.create_resource(
+				action_data.get("resource_type", ""),
+				action_data.get("properties", {}),
+				action_data.get("save_path", "")
+			)
+		"get_scene_tree":
+			result = _editor_actions.get_scene_tree()
+		"instantiate_scene":
+			result = _editor_actions.instantiate_scene(
+				action_data.get("parent_path", ""),
+				action_data.get("scene_path", ""),
+				action_data.get("instance_name", "")
+			)
+		"save_scene":
+			result = _editor_actions.save_scene()
+		"attach_script":
+			result = _editor_actions.attach_script(
+				action_data.get("node_path", ""),
+				action_data.get("script_path", ""),
+				action_data.get("create_content", "")
+			)
+		"connect_signal":
+			result = _editor_actions.connect_signal(
+				action_data.get("source_path", ""),
+				action_data.get("signal_name", ""),
+				action_data.get("target_path", ""),
+				action_data.get("method_name", "")
+			)
+		"get_selection":
+			result = _editor_actions.get_selection()
+		"set_selection":
+			result = _editor_actions.set_selection(action_data.get("node_paths", []))
+		"spawn_grid":
+			var spacing = action_data.get("spacing", [1, 0, 1])
+			if spacing is Array and spacing.size() >= 3:
+				result = _editor_actions.spawn_grid(
+					action_data.get("parent_path", ""),
+					action_data.get("node_class", ""),
+					action_data.get("rows", 1),
+					action_data.get("cols", 1),
+					Vector3(spacing[0], spacing[1], spacing[2]),
+					action_data.get("name_prefix", "Tile")
+				)
+			else:
+				result = {"error": "Invalid spacing array"}
+		"spawn_random_in_area":
+			var bounds_min = action_data.get("bounds_min", [0, 0, 0])
+			var bounds_max = action_data.get("bounds_max", [10, 0, 10])
+			if bounds_min is Array and bounds_min.size() >= 3 and bounds_max is Array and bounds_max.size() >= 3:
+				result = _editor_actions.spawn_random_in_area(
+					action_data.get("parent_path", ""),
+					action_data.get("node_class", ""),
+					action_data.get("count", 1),
+					Vector3(bounds_min[0], bounds_min[1], bounds_min[2]),
+					Vector3(bounds_max[0], bounds_max[1], bounds_max[2]),
+					action_data.get("name_prefix", "Scatter")
+				)
+			else:
+				result = {"error": "Invalid bounds arrays"}
+		"spawn_along_path":
+			result = _editor_actions.spawn_along_path(
+				action_data.get("parent_path", ""),
+				action_data.get("node_class", ""),
+				action_data.get("points", []),
+				action_data.get("name_prefix", "PathPoint")
+			)
+		"get_pending_changes":
+			result = {"changes": _editor_actions.get_pending_changes()}
+		"clear_pending_changes":
+			_editor_actions.clear_pending_changes()
+			result = {"success": true}
+		"undo_last":
+			result = _editor_actions.undo_last()
+		_:
+			result = {"error": "Unknown action: " + action}
+	
+	# Send response back to backend
+	_send_editor_response(request_id, result)
+	
+	# Emit signal for local listeners
+	if result.get("success", false):
+		editor_action_completed.emit(action, result)
+	else:
+		editor_action_failed.emit(action, result.get("error", "Unknown error"))
+
+
+func _send_editor_response(request_id: String, result: Dictionary) -> void:
+	"""Send editor action response back to backend"""
+	if not _ws_connected:
+		return
+	
+	var response := {
+		"type": "editor_response",
+		"request_id": request_id,
+		"result": result
+	}
+	
+	var json_string := JSON.stringify(response)
+	_ws_client.send_text(json_string)

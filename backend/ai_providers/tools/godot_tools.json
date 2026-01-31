@@ -1,0 +1,386 @@
+{
+  "tools": [
+    {
+      "name": "godot_create_node",
+      "description": "Create a new node in the Godot scene tree. Use this to add CharacterBody3D, MeshInstance3D, Camera3D, CollisionShape3D, and any other Godot node types.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "parent_path": {
+            "type": "string",
+            "description": "Path to parent node, e.g. '/root/Level' or just the scene root name"
+          },
+          "node_class": {
+            "type": "string",
+            "description": "Godot class name, e.g. 'CharacterBody3D', 'MeshInstance3D', 'Camera3D', 'CollisionShape3D'"
+          },
+          "node_name": {
+            "type": "string",
+            "description": "Name for the new node"
+          },
+          "properties": {
+            "type": "object",
+            "description": "Optional initial properties. Vectors as arrays: position: [0, 1, 0]"
+          }
+        },
+        "required": [
+          "parent_path",
+          "node_class",
+          "node_name"
+        ]
+      }
+    },
+    {
+      "name": "godot_delete_node",
+      "description": "Delete a node from the Godot scene tree.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_path": {
+            "type": "string",
+            "description": "Path to the node to delete"
+          }
+        },
+        "required": [
+          "node_path"
+        ]
+      }
+    },
+    {
+      "name": "godot_set_property",
+      "description": "Set a property on a Godot node. Use for transforms, visibility, physics settings, etc.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_path": {
+            "type": "string",
+            "description": "Path to the node"
+          },
+          "property": {
+            "type": "string",
+            "description": "Property name, e.g. 'position', 'rotation', 'visible', 'scale'"
+          },
+          "value": {
+            "description": "Value to set. Use arrays for vectors: [x, y, z]"
+          }
+        },
+        "required": [
+          "node_path",
+          "property",
+          "value"
+        ]
+      }
+    },
+    {
+      "name": "godot_get_property",
+      "description": "Get the current value of a property on a Godot node.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_path": {
+            "type": "string",
+            "description": "Path to the node"
+          },
+          "property": {
+            "type": "string",
+            "description": "Property name to get"
+          }
+        },
+        "required": [
+          "node_path",
+          "property"
+        ]
+      }
+    },
+    {
+      "name": "godot_attach_resource",
+      "description": "Attach a mesh, material, texture, or other resource to a node property.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_path": {
+            "type": "string",
+            "description": "Path to the node"
+          },
+          "property": {
+            "type": "string",
+            "description": "Property to set, e.g. 'mesh', 'material_override', 'texture'"
+          },
+          "resource_path": {
+            "type": "string",
+            "description": "Resource path, e.g. 'res://models/player.glb', 'res://materials/red.tres'"
+          }
+        },
+        "required": [
+          "node_path",
+          "property",
+          "resource_path"
+        ]
+      }
+    },
+    {
+      "name": "godot_create_resource",
+      "description": "Create a new resource (Material, BoxShape3D, etc.) and save it to disk.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "resource_type": {
+            "type": "string",
+            "description": "Resource class, e.g. 'StandardMaterial3D', 'BoxShape3D', 'SphereShape3D'"
+          },
+          "properties": {
+            "type": "object",
+            "description": "Properties to set on the resource"
+          },
+          "save_path": {
+            "type": "string",
+            "description": "Path to save, e.g. 'res://materials/player_material.tres'"
+          }
+        },
+        "required": [
+          "resource_type",
+          "save_path"
+        ]
+      }
+    },
+    {
+      "name": "godot_instantiate_scene",
+      "description": "Add a scene instance (prefab) as a child of a node.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "parent_path": {
+            "type": "string",
+            "description": "Path to parent node"
+          },
+          "scene_path": {
+            "type": "string",
+            "description": "Scene to instantiate, e.g. 'res://prefabs/enemy.tscn'"
+          },
+          "instance_name": {
+            "type": "string",
+            "description": "Name for the instance"
+          }
+        },
+        "required": [
+          "parent_path",
+          "scene_path",
+          "instance_name"
+        ]
+      }
+    },
+    {
+      "name": "godot_get_scene_tree",
+      "description": "Get the current scene's full node tree structure with names, types, and paths.",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "godot_attach_script",
+      "description": "Attach a GDScript to a node. Optionally create the script with provided content.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_path": {
+            "type": "string",
+            "description": "Path to the node"
+          },
+          "script_path": {
+            "type": "string",
+            "description": "Script path, e.g. 'res://scripts/player.gd'"
+          },
+          "script_content": {
+            "type": "string",
+            "description": "Optional: GDScript content to create a new script"
+          }
+        },
+        "required": [
+          "node_path",
+          "script_path"
+        ]
+      }
+    },
+    {
+      "name": "godot_connect_signal",
+      "description": "Connect a signal from one node to a method on another node.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "source_path": {
+            "type": "string",
+            "description": "Path to the node emitting the signal"
+          },
+          "signal_name": {
+            "type": "string",
+            "description": "Signal name, e.g. 'pressed', 'body_entered', 'timeout'"
+          },
+          "target_path": {
+            "type": "string",
+            "description": "Path to the node receiving the signal"
+          },
+          "method_name": {
+            "type": "string",
+            "description": "Method to call, e.g. '_on_button_pressed'"
+          }
+        },
+        "required": [
+          "source_path",
+          "signal_name",
+          "target_path",
+          "method_name"
+        ]
+      }
+    },
+    {
+      "name": "godot_get_selection",
+      "description": "Get the currently selected nodes in the Godot editor.",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "godot_save_scene",
+      "description": "Save the current scene to disk.",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "godot_undo",
+      "description": "Undo the last editor action.",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "godot_spawn_grid",
+      "description": "Spawn nodes in a grid pattern. Perfect for floors, walls, tilemaps. Creates rows*cols nodes with specified spacing.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "parent_path": {
+            "type": "string",
+            "description": "Path to parent node"
+          },
+          "node_class": {
+            "type": "string",
+            "description": "Godot class to spawn, e.g. 'MeshInstance3D', 'StaticBody3D'"
+          },
+          "rows": {
+            "type": "integer",
+            "description": "Number of rows (1-50)"
+          },
+          "cols": {
+            "type": "integer",
+            "description": "Number of columns (1-50)"
+          },
+          "spacing": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "description": "Spacing between nodes as [x, y, z]"
+          },
+          "name_prefix": {
+            "type": "string",
+            "description": "Prefix for node names, default 'Tile'"
+          }
+        },
+        "required": [
+          "parent_path",
+          "node_class",
+          "rows",
+          "cols",
+          "spacing"
+        ]
+      }
+    },
+    {
+      "name": "godot_spawn_random",
+      "description": "Scatter nodes randomly in a 3D area. Good for trees, rocks, decorations. Nodes get random Y rotation.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "parent_path": {
+            "type": "string",
+            "description": "Path to parent node"
+          },
+          "node_class": {
+            "type": "string",
+            "description": "Godot class to spawn"
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of nodes to spawn (1-500)"
+          },
+          "bounds_min": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "description": "Minimum bounds [x, y, z]"
+          },
+          "bounds_max": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "description": "Maximum bounds [x, y, z]"
+          },
+          "name_prefix": {
+            "type": "string",
+            "description": "Prefix for node names, default 'Scatter'"
+          }
+        },
+        "required": [
+          "parent_path",
+          "node_class",
+          "count",
+          "bounds_min",
+          "bounds_max"
+        ]
+      }
+    },
+    {
+      "name": "godot_spawn_path",
+      "description": "Place nodes along a path of points. Perfect for waypoints, road markers, fences. Nodes orient towards the next point.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "parent_path": {
+            "type": "string",
+            "description": "Path to parent node"
+          },
+          "node_class": {
+            "type": "string",
+            "description": "Godot class to spawn"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            },
+            "description": "Array of [x, y, z] positions"
+          },
+          "name_prefix": {
+            "type": "string",
+            "description": "Prefix for node names, default 'PathPoint'"
+          }
+        },
+        "required": [
+          "parent_path",
+          "node_class",
+          "points"
+        ]
+      }
+    }
+  ]
+}

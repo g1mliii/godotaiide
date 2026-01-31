@@ -265,7 +265,7 @@ class FileWatcherService:
         self.observer = Observer()
 
         # Store event loop reference for async callback
-        self.handler._loop = asyncio.get_event_loop()
+        self.handler._loop = asyncio.get_running_loop()
 
         # Set broadcast callback if provided
         if callback:

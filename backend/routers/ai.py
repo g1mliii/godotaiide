@@ -15,6 +15,9 @@ from models.ai_models import (
     AICompleteResponse,
     CommitMessageRequest,
     CommitMessageResponse,
+    AIEditorCommandRequest,
+    AIEditorCommandResponse,
+    ToolResult,
 )
 
 router = APIRouter()
@@ -111,5 +114,71 @@ async def generate_commit_message(request: CommitMessageRequest):
         )
 
         return CommitMessageResponse(message=message, explanation=None)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/editor/command", response_model=AIEditorCommandResponse)
+async def execute_editor_command(request: AIEditorCommandRequest):
+    """
+    Execute AI-driven editor commands with tool calling.
+
+    The AI will analyze the prompt and use tools to manipulate the Godot editor:
+    - Create nodes, set properties
+    - Attach resources and scripts
+    - Spawn grids, scatter objects, place along paths
+
+    Example prompts:
+    - "Create a 10x10 floor grid using MeshInstance3D"
+    - "Scatter 50 trees randomly in the forest area"
+    - "Add a Camera3D as a child of the Player node"
+    """
+    if ai_service is None:
+        raise HTTPException(status_code=500, detail="AI service not initialized")
+
+    try:
+        from ai_providers.direct_api import DirectAPIProvider
+
+        # Get the provider (must be direct API for tool calling)
+        provider = ai_service._get_provider(request.mode)
+
+        if not isinstance(provider, DirectAPIProvider):
+            raise HTTPException(
+                status_code=400,
+                detail="Tool calling requires direct API mode (Claude or GPT)",
+            )
+
+        # Build system prompt for Godot editor context
+        system_prompt = """You are an AI assistant that helps build Godot game levels.
+You have access to tools to directly manipulate the Godot editor.
+
+When the user asks you to create, modify, or arrange nodes:
+1. Use the appropriate tools to make the changes
+2. Use godot_get_scene_tree first if you need to understand the current scene structure
+3. For grids, use godot_spawn_grid
+4. For random scattering, use godot_spawn_random
+5. For path-based placement, use godot_spawn_path
+6. For individual nodes, use godot_create_node
+
+Always confirm what you've done after completing the task."""
+
+        result = await provider.ask_with_tools(
+            prompt=request.prompt,
+            context=request.context,
+            system_prompt=system_prompt,
+        )
+
+        # Convert tool results to Pydantic models
+        tool_results = [
+            ToolResult(tool=tr["tool"], input=tr["input"], result=tr["result"])
+            for tr in result.get("tool_results", [])
+        ]
+
+        return AIEditorCommandResponse(
+            response=result.get("response", ""), tool_results=tool_results
+        )
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,4 +1,4 @@
-# 🧠 Godot-Minds
+# Godot-AI-Code
 
 > AI-powered development assistant for Godot Engine with Git integration, intelligent code editing, and multi-language support (GDScript/C#/C++)
 

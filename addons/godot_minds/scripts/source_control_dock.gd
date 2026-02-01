@@ -24,6 +24,9 @@ const COLOR_UNTRACKED := Color(0.9, 0.9, 0.5)
 const COLOR_RENAMED := Color(0.9, 0.7, 0.3)
 const COLOR_COPIED := Color(0.6, 0.9, 0.6)
 
+# Diff window scene (lazy loaded)
+const DiffWindowScene := preload("res://addons/godot_minds/scenes/diff_window.tscn")
+
 # Cached status display data (avoid allocations in hot path)
 var _status_displays: Dictionary = {}  # Initialized in _ready
 
@@ -35,8 +38,6 @@ var _icon_file_plus: Texture2D
 var _icon_file_minus: Texture2D
 var _icon_check: Texture2D
 
-# Diff window scene (lazy loaded)
-const DiffWindowScene := preload("res://addons/godot_minds/scenes/diff_window.tscn")
 var _active_diff_window: Window = null
 
 # State

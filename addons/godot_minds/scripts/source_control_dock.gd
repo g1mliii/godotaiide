@@ -35,6 +35,10 @@ var _icon_file_plus: Texture2D
 var _icon_file_minus: Texture2D
 var _icon_check: Texture2D
 
+# Diff window scene (lazy loaded)
+const DiffWindowScene := preload("res://addons/godot_minds/scenes/diff_window.tscn")
+var _active_diff_window: Window = null
+
 # State
 var _api_client: Node
 var _settings: Node
@@ -131,6 +135,11 @@ func _exit_tree() -> void:
 	if _refresh_debounce_timer:
 		_refresh_debounce_timer.queue_free()
 		_refresh_debounce_timer = null
+
+	# Clean up active diff window
+	if _active_diff_window and is_instance_valid(_active_diff_window):
+		_active_diff_window.queue_free()
+		_active_diff_window = null
 
 
 func _notification(what: int) -> void:
@@ -669,7 +678,7 @@ func _on_file_tree_item_selected() -> void:
 
 
 func _on_file_tree_item_activated() -> void:
-	"""Called when item is double-clicked - open file in editor"""
+	"""Called when item is double-clicked - open diff window"""
 	var selected := file_tree.get_selected()
 	if not selected or not selected.get_metadata(0):
 		return
@@ -680,12 +689,43 @@ func _on_file_tree_item_activated() -> void:
 	if file_path.is_empty():
 		return
 
-	# Open file in editor
-	var editor_interface := EditorInterface
-	if editor_interface:
-		var full_path := "res://" + file_path
-		editor_interface.edit_script(load(full_path))
-		print("[SourceControlDock] Opening file: %s" % full_path)
+	_open_diff_window(file_path)
+
+
+func _open_diff_window(file_path: String) -> void:
+	"""Open the diff window for a file."""
+	# Clean up existing diff window if any
+	if _active_diff_window and is_instance_valid(_active_diff_window):
+		_active_diff_window.queue_free()
+		_active_diff_window = null
+
+	# Instantiate new diff window
+	_active_diff_window = DiffWindowScene.instantiate()
+	add_child(_active_diff_window)
+
+	# Setup with dependencies
+	_active_diff_window.setup(_api_client, file_path)
+
+	# Connect signals
+	_active_diff_window.diff_accepted.connect(_on_diff_accepted)
+	_active_diff_window.diff_rejected.connect(_on_diff_rejected)
+
+	# Show the diff
+	_active_diff_window.show_diff()
+	print("[SourceControlDock] Opening diff window for: %s" % file_path)
+
+
+func _on_diff_accepted(file_path: String) -> void:
+	"""Handle diff accepted - refresh status."""
+	print("[SourceControlDock] Diff accepted for: %s" % file_path)
+	_active_diff_window = null
+	refresh_status()
+
+
+func _on_diff_rejected(file_path: String) -> void:
+	"""Handle diff rejected - just clear reference."""
+	print("[SourceControlDock] Diff rejected for: %s" % file_path)
+	_active_diff_window = null
 
 
 func _on_stage_button_pressed() -> void:

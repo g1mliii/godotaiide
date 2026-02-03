@@ -93,7 +93,7 @@ func _exit_tree() -> void:
 
 	# CRITICAL: Disconnect all API signals to prevent memory leaks
 	# The API client is an autoload singleton that persists between plugin reloads
-	if _api_client:
+	if _api_client and is_instance_valid(_api_client):
 		if _api_client.git_status_received.is_connected(_on_git_status_received):
 			_api_client.git_status_received.disconnect(_on_git_status_received)
 		if _api_client.git_operation_completed.is_connected(_on_git_operation_completed):
@@ -231,14 +231,18 @@ func _setup_debounce_timer() -> void:
 
 
 func _connect_signals() -> void:
-	if not _api_client:
+	if not _api_client or not is_instance_valid(_api_client):
 		return
 
-	# API signals
-	_api_client.git_status_received.connect(_on_git_status_received)
-	_api_client.git_operation_completed.connect(_on_git_operation_completed)
-	_api_client.api_error.connect(_on_api_error)
-	_api_client.ai_commit_message_received.connect(_on_ai_commit_message_received)
+	# API signals (with is_connected checks to prevent duplicates)
+	if not _api_client.git_status_received.is_connected(_on_git_status_received):
+		_api_client.git_status_received.connect(_on_git_status_received)
+	if not _api_client.git_operation_completed.is_connected(_on_git_operation_completed):
+		_api_client.git_operation_completed.connect(_on_git_operation_completed)
+	if not _api_client.api_error.is_connected(_on_api_error):
+		_api_client.api_error.connect(_on_api_error)
+	if not _api_client.ai_commit_message_received.is_connected(_on_ai_commit_message_received):
+		_api_client.ai_commit_message_received.connect(_on_ai_commit_message_received)
 
 	# UI signals
 	refresh_button.pressed.connect(_on_refresh_button_pressed)

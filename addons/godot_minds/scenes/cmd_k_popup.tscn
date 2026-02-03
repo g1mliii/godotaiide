@@ -1,0 +1,74 @@
+[gd_scene load_steps=3 format=3 uid="uid://cmd_k_popup_scene"]
+
+[ext_resource type="Script" path="res://addons/godot_minds/scripts/cmd_k_popup.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://addons/godot_minds/icons/lucide/sparkles.svg" id="2_sparkles"]
+
+[node name="CmdKPopup" type="Window"]
+title = "AI Assistant"
+initial_position = 2
+size = Vector2i(450, 150)
+min_size = Vector2i(350, 120)
+exclusive = true
+transient = true
+script = ExtResource("1_script")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="SparklesIcon" type="TextureRect" parent="MarginContainer/VBoxContainer/Header"]
+layout_mode = 2
+texture = ExtResource("2_sparkles")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="ContextLabel" type="Label" parent="MarginContainer/VBoxContainer/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "No file open"
+clip_text = true
+
+[node name="PromptLineEdit" type="LineEdit" parent="MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Describe what you want..."
+clear_button_enabled = true
+
+[node name="LoadingIndicator" type="Label" parent="MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "Generating..."
+horizontal_alignment = 1
+
+[node name="ErrorLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.3, 0.3, 1)
+text = "Error message"
+horizontal_alignment = 1
+
+[node name="ButtonBar" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+alignment = 2
+
+[node name="CancelButton" type="Button" parent="MarginContainer/VBoxContainer/ButtonBar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Cancel"

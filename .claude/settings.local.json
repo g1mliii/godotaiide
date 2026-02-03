@@ -29,7 +29,10 @@
       "Bash(ls:*)",
       "Bash(git restore:*)",
       "Bash(wc:*)",
-      "Bash(godot:*)"
+      "Bash(godot:*)",
+      "Bash(gdlint:*)",
+      "Bash(ruff check:*)",
+      "Bash(black:*)"
     ]
   }
 }

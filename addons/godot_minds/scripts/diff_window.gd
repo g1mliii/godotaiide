@@ -14,10 +14,11 @@ const COLOR_ADDED_BG := Color(0.15, 0.4, 0.15, 0.5)    # Dark green
 const OPEN_DEBOUNCE_MS := 300
 
 # State
-var _api_client: Node
+var _api_client: Node = null
 var _file_path: String = ""
 var _is_loading: bool = false
 var _last_open_time: int = 0
+var _is_closing: bool = false  # Guard against double-close
 
 # Performance: compile regex once
 var _hunk_regex: RegEx
@@ -51,13 +52,17 @@ func _ready() -> void:
 	# Connect window signals
 	close_requested.connect(_on_close_requested)
 
-	# Connect button signals
-	accept_button.pressed.connect(_on_accept_pressed)
-	reject_button.pressed.connect(_on_reject_pressed)
+	# Connect button signals (with null checks)
+	if accept_button:
+		accept_button.pressed.connect(_on_accept_pressed)
+	if reject_button:
+		reject_button.pressed.connect(_on_reject_pressed)
 
 	# Cache scroll bar references for performance (avoid repeated lookups)
-	_original_vscroll = original_code_edit.get_v_scroll_bar()
-	_new_vscroll = new_code_edit.get_v_scroll_bar()
+	if original_code_edit:
+		_original_vscroll = original_code_edit.get_v_scroll_bar()
+	if new_code_edit:
+		_new_vscroll = new_code_edit.get_v_scroll_bar()
 
 	if _original_vscroll:
 		_original_vscroll.value_changed.connect(_on_original_scroll_changed)
@@ -65,16 +70,24 @@ func _ready() -> void:
 		_new_vscroll.value_changed.connect(_on_new_scroll_changed)
 
 
+func _unhandled_key_input(event: InputEvent) -> void:
+	# Close on Escape key
+	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		_close_window()
+		get_viewport().set_input_as_handled()
+
+
 func _exit_tree() -> void:
 	# Disconnect API signals to prevent memory leaks
-	if _api_client:
+	if _api_client and is_instance_valid(_api_client):
 		if _api_client.git_diff_received.is_connected(_on_git_diff_received):
 			_api_client.git_diff_received.disconnect(_on_git_diff_received)
 		if _api_client.api_error.is_connected(_on_api_error):
 			_api_client.api_error.disconnect(_on_api_error)
 
-	# Clean up regex
+	# Clean up regex and references
 	_hunk_regex = null
+	_api_client = null
 
 
 func setup(api_client: Node, file_path: String) -> void:
@@ -82,8 +95,8 @@ func setup(api_client: Node, file_path: String) -> void:
 	_api_client = api_client
 	_file_path = file_path
 
-	# Connect API signals
-	if _api_client:
+	# Connect API signals (with instance validity check)
+	if _api_client and is_instance_valid(_api_client):
 		if not _api_client.git_diff_received.is_connected(_on_git_diff_received):
 			_api_client.git_diff_received.connect(_on_git_diff_received)
 		if not _api_client.api_error.is_connected(_on_api_error):
@@ -106,7 +119,7 @@ func show_diff() -> void:
 		push_error("[DiffWindow] No file path set")
 		return
 
-	if not _api_client:
+	if not _api_client or not is_instance_valid(_api_client):
 		push_error("[DiffWindow] No API client set")
 		return
 
@@ -135,6 +148,10 @@ func _set_loading(loading: bool) -> void:
 
 func _on_git_diff_received(data: Dictionary) -> void:
 	"""Handle diff data from API."""
+	# Guard: Window may have been closed while waiting for response
+	if not is_instance_valid(self) or not is_inside_tree():
+		return
+
 	_set_loading(false)
 
 	# Check if this diff is for our file
@@ -329,18 +346,30 @@ func _on_close_requested() -> void:
 
 func _on_api_error(error_message: String) -> void:
 	"""Handle API errors."""
+	# Guard: Window may have been closed while waiting for response
+	if not is_instance_valid(self) or not is_inside_tree():
+		return
+
 	_set_loading(false)
 	push_error("[DiffWindow] API error: %s" % error_message)
 
 
 func _close_window() -> void:
 	"""Clean up and close the window."""
+	# Guard against double-close
+	if _is_closing:
+		return
+	_is_closing = true
+
 	# Disconnect signals before closing
-	if _api_client:
+	if _api_client and is_instance_valid(_api_client):
 		if _api_client.git_diff_received.is_connected(_on_git_diff_received):
 			_api_client.git_diff_received.disconnect(_on_git_diff_received)
 		if _api_client.api_error.is_connected(_on_api_error):
 			_api_client.api_error.disconnect(_on_api_error)
+
+	# Clear reference
+	_api_client = null
 
 	hide()
 	queue_free()

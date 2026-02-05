@@ -32,7 +32,9 @@
       "Bash(godot:*)",
       "Bash(gdlint:*)",
       "Bash(ruff check:*)",
-      "Bash(black:*)"
+      "Bash(black:*)",
+      "Bash(uvicorn main:app:*)",
+      "Bash(if not exist tasks mkdir tasks)"
     ]
   }
 }

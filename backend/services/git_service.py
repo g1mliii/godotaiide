@@ -201,15 +201,22 @@ class GitService:
             GitDiffResponse with original and new content
         """
         # Get HEAD version (original)
+        in_head = False
         try:
             original_content = self.repo.git.show(f"HEAD:{file_path}")
+            in_head = True
         except GitCommandError:
             # File is new (not in HEAD)
             original_content = ""
 
         # Get working directory version (new)
         file_full_path = self.repo_path / file_path
-        if file_full_path.exists():
+        exists_on_disk = file_full_path.exists()
+
+        if not in_head and not exists_on_disk:
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        if exists_on_disk:
             # Check file size before reading to prevent OOM
             file_size = file_full_path.stat().st_size
             if file_size > self.MAX_FILE_SIZE_BYTES:

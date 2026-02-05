@@ -117,7 +117,7 @@ func get_git_diff(file_path: String) -> int:
 		push_error("File path cannot be empty or whitespace-only for git diff")
 		return -1
 
-	var query := "?file_path=%s" % trimmed_path.uri_encode()
+	var query := "?file=%s" % trimmed_path.uri_encode()
 	return _make_get_request("/git/diff" + query, "git_diff", GIT_REQUEST_TIMEOUT)
 
 

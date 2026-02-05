@@ -24,9 +24,6 @@ const COLOR_UNTRACKED := Color(0.9, 0.9, 0.5)
 const COLOR_RENAMED := Color(0.9, 0.7, 0.3)
 const COLOR_COPIED := Color(0.6, 0.9, 0.6)
 
-# Diff window scene (lazy loaded)
-const DiffWindowScene := preload("res://addons/godot_minds/scenes/diff_window.tscn")
-
 # Cached status display data (avoid allocations in hot path)
 var _status_displays: Dictionary = {}  # Initialized in _ready
 
@@ -38,9 +35,9 @@ var _icon_file_plus: Texture2D
 var _icon_file_minus: Texture2D
 var _icon_check: Texture2D
 
-var _active_diff_window: Window = null
-
 # State
+var _diff_viewer_panel: Control = null  # Reference to DiffViewerPanel (injected by plugin)
+var _plugin: EditorPlugin = null  # Reference to plugin (injected by plugin)
 var _api_client: Node
 var _settings: Node
 var _staged_files: Dictionary = {}    # path -> FileStatus
@@ -131,16 +128,37 @@ func _exit_tree() -> void:
 
 	# Clean up debounce timers
 	if _debounce_timer:
+		# Disconnect timer signals before freeing
+		if _debounce_timer.timeout.is_connected(_on_debounce_timeout):
+			_debounce_timer.timeout.disconnect(_on_debounce_timeout)
 		_debounce_timer.queue_free()
 		_debounce_timer = null
 	if _refresh_debounce_timer:
+		# Disconnect timer signals before freeing
+		if _refresh_debounce_timer.timeout.is_connected(_on_refresh_debounce_timeout):
+			_refresh_debounce_timer.timeout.disconnect(_on_refresh_debounce_timeout)
 		_refresh_debounce_timer.queue_free()
 		_refresh_debounce_timer = null
 
-	# Clean up active diff window
-	if _active_diff_window and is_instance_valid(_active_diff_window):
-		_active_diff_window.queue_free()
-		_active_diff_window = null
+	# CRITICAL: Clear tree metadata and caches to prevent memory leaks
+	_clear_tree_metadata()
+	_tree_item_cache.clear()
+	_last_file_set.clear()
+	_staged_files.clear()
+	_unstaged_files.clear()
+	if file_tree:
+		file_tree.clear()
+
+	# Disconnect diff viewer signals
+	if _diff_viewer_panel and is_instance_valid(_diff_viewer_panel):
+		if _diff_viewer_panel.diff_accepted.is_connected(_on_diff_accepted):
+			_diff_viewer_panel.diff_accepted.disconnect(_on_diff_accepted)
+		if _diff_viewer_panel.diff_rejected.is_connected(_on_diff_rejected):
+			_diff_viewer_panel.diff_rejected.disconnect(_on_diff_rejected)
+		_diff_viewer_panel = null
+
+	# Clear plugin reference
+	_plugin = null
 
 
 func _notification(what: int) -> void:
@@ -196,6 +214,21 @@ func set_services(api_client: Node, settings: Node) -> void:
 	_api_client = api_client
 	_settings = settings
 	print("[SourceControlDock] Services injected")
+
+
+func set_diff_viewer(diff_viewer: Control, plugin: EditorPlugin) -> void:
+	"""Called by plugin to inject diff viewer panel reference and plugin reference"""
+	_diff_viewer_panel = diff_viewer
+	_plugin = plugin
+
+	# Connect diff viewer signals
+	if _diff_viewer_panel:
+		if _diff_viewer_panel.has_signal("diff_accepted"):
+			_diff_viewer_panel.diff_accepted.connect(_on_diff_accepted)
+		if _diff_viewer_panel.has_signal("diff_rejected"):
+			_diff_viewer_panel.diff_rejected.connect(_on_diff_rejected)
+
+	print("[SourceControlDock] Diff viewer panel connected")
 
 
 func _initialize_api_client() -> void:
@@ -698,39 +731,34 @@ func _on_file_tree_item_activated() -> void:
 
 
 func _open_diff_window(file_path: String) -> void:
-	"""Open the diff window for a file."""
-	# Clean up existing diff window if any
-	if _active_diff_window and is_instance_valid(_active_diff_window):
-		_active_diff_window.queue_free()
-		_active_diff_window = null
+	"""Open the diff viewer panel for a file."""
+	if not _diff_viewer_panel or not is_instance_valid(_diff_viewer_panel):
+		push_error("[SourceControlDock] Diff viewer panel not available")
+		return
 
-	# Instantiate new diff window
-	_active_diff_window = DiffWindowScene.instantiate()
-	add_child(_active_diff_window)
+	if not _plugin or not is_instance_valid(_plugin):
+		push_error("[SourceControlDock] Plugin reference not available")
+		return
 
-	# Setup with dependencies
-	_active_diff_window.setup(_api_client, file_path)
+	# Show diff in the panel
+	_diff_viewer_panel.show_git_diff(file_path)
 
-	# Connect signals
-	_active_diff_window.diff_accepted.connect(_on_diff_accepted)
-	_active_diff_window.diff_rejected.connect(_on_diff_rejected)
+	# Make bottom panel visible
+	if _plugin.has_method("show_diff_viewer"):
+		_plugin.show_diff_viewer()
 
-	# Show the diff
-	_active_diff_window.show_diff()
-	print("[SourceControlDock] Opening diff window for: %s" % file_path)
+	print("[SourceControlDock] Opening diff viewer for: %s" % file_path)
 
 
 func _on_diff_accepted(file_path: String) -> void:
 	"""Handle diff accepted - refresh status."""
 	print("[SourceControlDock] Diff accepted for: %s" % file_path)
-	_active_diff_window = null
 	refresh_status()
 
 
 func _on_diff_rejected(file_path: String) -> void:
-	"""Handle diff rejected - just clear reference."""
+	"""Handle diff rejected."""
 	print("[SourceControlDock] Diff rejected for: %s" % file_path)
-	_active_diff_window = null
 
 
 func _on_stage_button_pressed() -> void:
@@ -1069,6 +1097,5 @@ func _show_alert(text: String, title: String) -> void:
 		dialog.confirmed.connect(dialog.queue_free)
 		dialog.close_requested.connect(dialog.queue_free)
 		dialog.canceled.connect(dialog.queue_free)  # ESC key
-		dialog.popup_hide.connect(dialog.queue_free)  # Click outside
 	else:
 		print("[Alert] %s: %s" % [title, text])

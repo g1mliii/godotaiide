@@ -181,14 +181,14 @@ class GitChangeHandler(FileSystemEventHandler):
 class GitWatcherService:
     """Service to watch git repository for status changes"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the git watcher service"""
-        self.observer: Optional[Observer] = None
+        self.observer: Optional[Any] = None
         self.handler: Optional[GitChangeHandler] = None
         self.watching = False
         self.watched_path: Optional[Path] = None
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Ensure cleanup on garbage collection"""
         self.stop_watching()
 

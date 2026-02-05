@@ -83,6 +83,8 @@ async def get_diff(file: str = Query(..., description="File path to get diff for
     try:
         diff = await asyncio.to_thread(git_service.get_diff, file)
         return diff
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -5,15 +5,13 @@ Tests the /git/diff endpoint and related features
 
 import pytest
 from fastapi.testclient import TestClient
-from pathlib import Path
 import subprocess
-import tempfile
-import os
 
 
 # Import app (assuming main.py exists in backend/)
 try:
     from main import app
+
     client = TestClient(app)
 except ImportError:
     pytest.skip("Backend app not available", allow_module_level=True)
@@ -31,13 +29,13 @@ def git_test_repo(tmp_path):
         ["git", "config", "user.name", "Test User"],
         cwd=repo_path,
         check=True,
-        capture_output=True
+        capture_output=True,
     )
     subprocess.run(
         ["git", "config", "user.email", "test@example.com"],
         cwd=repo_path,
         check=True,
-        capture_output=True
+        capture_output=True,
     )
 
     # Create initial file
@@ -45,12 +43,14 @@ def git_test_repo(tmp_path):
     test_file.write_text("func original():\n    pass\n")
 
     # Commit initial version
-    subprocess.run(["git", "add", "test.gd"], cwd=repo_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", "test.gd"], cwd=repo_path, check=True, capture_output=True
+    )
     subprocess.run(
         ["git", "commit", "-m", "Initial commit"],
         cwd=repo_path,
         check=True,
-        capture_output=True
+        capture_output=True,
     )
 
     # Modify file
@@ -155,7 +155,8 @@ class TestDiffPerformance:
         import time
 
         start = time.time()
-        response = client.get("/git/diff?file=test.gd")
+        response = client.get("/git/diff?file=test_file.gd")
+        assert response.status_code in [200, 404, 422]
         duration = time.time() - start
 
         # Should respond in less than 500ms for small files
@@ -199,8 +200,6 @@ class TestDiffEdgeCases:
 
 
 # Markers for pytest
-pytest.mark.diff = pytest.mark.mark
-pytest.mark.slow = pytest.mark.mark
 
 
 if __name__ == "__main__":

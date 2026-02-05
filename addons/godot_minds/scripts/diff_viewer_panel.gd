@@ -1,10 +1,11 @@
 @tool
-class_name DiffWindow
-extends Window
+class_name DiffViewerPanel
+extends Control
 
 # Signals
 signal diff_accepted(file_path: String)
 signal diff_rejected(file_path: String)
+signal panel_closed()
 
 # Constants - Diff line highlighting colors
 const COLOR_REMOVED_BG := Color(0.4, 0.15, 0.15, 0.5)  # Dark red
@@ -18,7 +19,6 @@ var _api_client: Node = null
 var _file_path: String = ""
 var _is_loading: bool = false
 var _last_open_time: int = 0
-var _is_closing: bool = false  # Guard against double-close
 
 # Performance: compile regex once
 var _hunk_regex: RegEx
@@ -42,6 +42,7 @@ var _new_vscroll: VScrollBar
 @onready var new_code_edit: CodeEdit = %NewCodeEdit
 @onready var accept_button: Button = %AcceptButton
 @onready var reject_button: Button = %RejectButton
+@onready var close_button: Button = %CloseButton
 
 
 func _ready() -> void:
@@ -49,14 +50,13 @@ func _ready() -> void:
 	_hunk_regex = RegEx.new()
 	_hunk_regex.compile("^@@\\s*-(\\d+)(?:,\\d+)?\\s*\\+(\\d+)(?:,\\d+)?\\s*@@")
 
-	# Connect window signals
-	close_requested.connect(_on_close_requested)
-
 	# Connect button signals (with null checks)
 	if accept_button:
 		accept_button.pressed.connect(_on_accept_pressed)
 	if reject_button:
 		reject_button.pressed.connect(_on_reject_pressed)
+	if close_button:
+		close_button.pressed.connect(_on_close_pressed)
 
 	# Cache scroll bar references for performance (avoid repeated lookups)
 	if original_code_edit:
@@ -69,11 +69,14 @@ func _ready() -> void:
 	if _new_vscroll:
 		_new_vscroll.value_changed.connect(_on_new_scroll_changed)
 
+	# Start hidden
+	hide()
+
 
 func _unhandled_key_input(event: InputEvent) -> void:
-	# Close on Escape key
-	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-		_close_window()
+	# Close on Escape key (only if visible)
+	if visible and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		hide_panel()
 		get_viewport().set_input_as_handled()
 
 
@@ -85,15 +88,31 @@ func _exit_tree() -> void:
 		if _api_client.api_error.is_connected(_on_api_error):
 			_api_client.api_error.disconnect(_on_api_error)
 
+	# CRITICAL: Disconnect scroll bar signals to prevent memory leak
+	if _original_vscroll and _original_vscroll.value_changed.is_connected(_on_original_scroll_changed):
+		_original_vscroll.value_changed.disconnect(_on_original_scroll_changed)
+	if _new_vscroll and _new_vscroll.value_changed.is_connected(_on_new_scroll_changed):
+		_new_vscroll.value_changed.disconnect(_on_new_scroll_changed)
+
+	# Clear scroll bar references
+	_original_vscroll = null
+	_new_vscroll = null
+
 	# Clean up regex and references
 	_hunk_regex = null
 	_api_client = null
 
 
-func setup(api_client: Node, file_path: String) -> void:
-	"""Initialize the diff window with dependencies."""
+func set_api_client(api_client: Node) -> void:
+	"""Set the API client reference."""
+	# Disconnect from old client if exists (prevent double-connection)
+	if _api_client and is_instance_valid(_api_client):
+		if _api_client.git_diff_received.is_connected(_on_git_diff_received):
+			_api_client.git_diff_received.disconnect(_on_git_diff_received)
+		if _api_client.api_error.is_connected(_on_api_error):
+			_api_client.api_error.disconnect(_on_api_error)
+
 	_api_client = api_client
-	_file_path = file_path
 
 	# Connect API signals (with instance validity check)
 	if _api_client and is_instance_valid(_api_client):
@@ -102,35 +121,76 @@ func setup(api_client: Node, file_path: String) -> void:
 		if not _api_client.api_error.is_connected(_on_api_error):
 			_api_client.api_error.connect(_on_api_error)
 
-	# Update UI
-	if file_path_label:
-		file_path_label.text = "File: %s" % file_path
 
-
-func show_diff() -> void:
-	"""Open the window and fetch diff data."""
+func show_git_diff(file_path: String) -> void:
+	"""Show diff for a git file change."""
 	# Debounce rapid opens (300ms guard)
 	var now := Time.get_ticks_msec()
 	if now - _last_open_time < OPEN_DEBOUNCE_MS:
 		return
 	_last_open_time = now
 
-	if _file_path.is_empty():
-		push_error("[DiffWindow] No file path set")
+	if file_path.is_empty():
+		push_error("[DiffViewerPanel] No file path provided")
 		return
 
 	if not _api_client or not is_instance_valid(_api_client):
-		push_error("[DiffWindow] No API client set")
+		push_error("[DiffViewerPanel] No API client set")
 		return
+
+	_file_path = file_path
+
+	# Update UI
+	if file_path_label:
+		file_path_label.text = "Viewing: %s" % file_path
 
 	# Show loading state
 	_set_loading(true)
 
-	# Show the window
-	popup_centered()
+	# Show the panel
+	show()
 
 	# Fetch diff from backend
 	_api_client.get_git_diff(_file_path)
+
+
+func show_ai_diff(file_path: String, original_content: String, ai_content: String) -> void:
+	"""Show diff for AI-suggested changes (for future Phase 9)."""
+	_file_path = file_path
+
+	# Update UI
+	if file_path_label:
+		file_path_label.text = "AI Suggestion: %s" % file_path
+
+	# Clear existing content and highlighting
+	_clear_highlighting()
+
+	# Set content directly (no API call needed)
+	original_code_edit.text = original_content
+	new_code_edit.text = ai_content
+
+	# Generate diff text for highlighting
+	# TODO: Generate unified diff from content comparison
+	# For now, just show content without highlighting
+
+	# Show the panel
+	show()
+	_set_loading(false)
+
+
+func hide_panel() -> void:
+	"""Hide the diff viewer panel."""
+	hide()
+	_clear_highlighting()
+
+	# Performance: Clear CodeEdit content to free memory
+	if original_code_edit:
+		original_code_edit.text = ""
+	if new_code_edit:
+		new_code_edit.text = ""
+
+	_file_path = ""
+	panel_closed.emit()
 
 
 func _set_loading(loading: bool) -> void:
@@ -148,7 +208,7 @@ func _set_loading(loading: bool) -> void:
 
 func _on_git_diff_received(data: Dictionary) -> void:
 	"""Handle diff data from API."""
-	# Guard: Window may have been closed while waiting for response
+	# Guard: Panel may have been hidden while waiting for response
 	if not is_instance_valid(self) or not is_inside_tree():
 		return
 
@@ -192,12 +252,12 @@ func _decompress_diff(compressed: String) -> String:
 
 	var decoded := Marshalls.base64_to_raw(compressed)
 	if decoded.is_empty():
-		push_error("[DiffWindow] Failed to decode base64 diff")
+		push_error("[DiffViewerPanel] Failed to decode base64 diff")
 		return ""
 
 	var decompressed := decoded.decompress_dynamic(-1, FileAccess.COMPRESSION_GZIP)
 	if decompressed.is_empty():
-		push_error("[DiffWindow] Failed to decompress diff")
+		push_error("[DiffViewerPanel] Failed to decompress diff")
 		return ""
 
 	return decompressed.get_string_from_utf8()
@@ -241,8 +301,10 @@ func _apply_diff_highlighting(diff_text: String) -> void:
 		var hunk_match := _hunk_regex.search(line)
 		if hunk_match:
 			# Parse starting line numbers (1-indexed in diff, convert to 0-indexed)
-			original_line = int(hunk_match.get_string(1)) - 1
-			new_line = int(hunk_match.get_string(2)) - 1
+			# Safety: Check regex groups exist before accessing
+			if hunk_match.get_group_count() >= 2:
+				original_line = int(hunk_match.get_string(1)) - 1
+				new_line = int(hunk_match.get_string(2)) - 1
 			continue
 
 		# Skip diff header lines
@@ -304,9 +366,9 @@ func _on_new_scroll_changed(value: float) -> void:
 
 
 func _on_accept_pressed() -> void:
-	"""Save the modified content and close."""
+	"""Save the modified content and hide panel."""
 	if _file_path.is_empty():
-		push_error("[DiffWindow] Cannot accept - no file path")
+		push_error("[DiffViewerPanel] Cannot accept - no file path")
 		return
 
 	# Get the modified content from the new pane
@@ -319,57 +381,35 @@ func _on_accept_pressed() -> void:
 	var file := FileAccess.open(full_path, FileAccess.WRITE)
 	if not file:
 		var error := FileAccess.get_open_error()
-		push_error("[DiffWindow] Failed to open file for writing: %s (error %d)" % [full_path, error])
+		push_error("[DiffViewerPanel] Failed to open file for writing: %s (error %d)" % [full_path, error])
 		return
 
 	file.store_string(new_content)
 	file.close()
 
-	print("[DiffWindow] Saved changes to: %s" % full_path)
+	print("[DiffViewerPanel] Saved changes to: %s" % full_path)
 
-	# Emit signal and close
+	# Emit signal and hide
 	diff_accepted.emit(_file_path)
-	_close_window()
+	hide_panel()
 
 
 func _on_reject_pressed() -> void:
-	"""Close without saving."""
+	"""Hide panel without saving."""
 	diff_rejected.emit(_file_path)
-	_close_window()
+	hide_panel()
 
 
-func _on_close_requested() -> void:
-	"""Handle window close button."""
-	diff_rejected.emit(_file_path)
-	_close_window()
+func _on_close_pressed() -> void:
+	"""Handle close button - same as reject."""
+	_on_reject_pressed()
 
 
 func _on_api_error(error_message: String) -> void:
 	"""Handle API errors."""
-	# Guard: Window may have been closed while waiting for response
+	# Guard: Panel may have been hidden while waiting for response
 	if not is_instance_valid(self) or not is_inside_tree():
 		return
 
 	_set_loading(false)
-	push_error("[DiffWindow] API error: %s" % error_message)
-
-
-func _close_window() -> void:
-	"""Clean up and close the window."""
-	# Guard against double-close
-	if _is_closing:
-		return
-	_is_closing = true
-
-	# Disconnect signals before closing
-	if _api_client and is_instance_valid(_api_client):
-		if _api_client.git_diff_received.is_connected(_on_git_diff_received):
-			_api_client.git_diff_received.disconnect(_on_git_diff_received)
-		if _api_client.api_error.is_connected(_on_api_error):
-			_api_client.api_error.disconnect(_on_api_error)
-
-	# Clear reference
-	_api_client = null
-
-	hide()
-	queue_free()
+	push_error("[DiffViewerPanel] API error: %s" % error_message)

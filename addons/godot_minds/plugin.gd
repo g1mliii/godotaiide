@@ -11,6 +11,7 @@ const EditorActionsClass := preload("res://addons/godot_minds/scripts/editor_act
 
 # References
 var _source_control_dock: Control
+var _diff_viewer_panel: Control
 var _editor_actions = null  # EditorActions instance
 var _api_client: Node = null  # API client instance (editor-only)
 var _settings_manager: Node = null  # Settings manager instance (editor-only)
@@ -59,24 +60,45 @@ func _complete_initialization() -> void:
 
 	add_control_to_dock(DOCK_SLOT_RIGHT_BL, _source_control_dock)
 	print("[Godot-Minds] Source Control dock added")
+
+	# Add Diff Viewer as bottom dock panel
+	var DiffViewerScene := preload("res://addons/godot_minds/scenes/diff_viewer_panel.tscn")
+	_diff_viewer_panel = DiffViewerScene.instantiate()
+
+	# Inject API client
+	if _diff_viewer_panel.has_method("set_api_client"):
+		_diff_viewer_panel.set_api_client(_api_client)
+
+	add_control_to_bottom_panel(_diff_viewer_panel, "Diff Viewer")
+	print("[Godot-Minds] Diff Viewer panel added")
+
+	# Connect Source Control to Diff Viewer
+	if _source_control_dock.has_method("set_diff_viewer"):
+		_source_control_dock.set_diff_viewer(_diff_viewer_panel, self)
+
 	print("[Godot-Minds] ✓ Plugin fully initialized!")
 
 
 func _exit_tree() -> void:
-	# Clean up editor actions reference
-	if _editor_actions:
-		if _api_client and _api_client.has_method("set_editor_actions"):
-			_api_client.set_editor_actions(null)
-		_editor_actions = null
+	# CRITICAL: Cleanup order matters! Clean up dependents before dependencies
+	# Order: UI components → Services → Editor actions
 
-	# Remove Source Control dock
+	# 1. Remove UI components first (they depend on services)
+	# Remove Diff Viewer panel FIRST (source control depends on it)
+	if _diff_viewer_panel:
+		remove_control_from_bottom_panel(_diff_viewer_panel)
+		_diff_viewer_panel.queue_free()
+		_diff_viewer_panel = null
+		print("[Godot-Minds] Diff Viewer panel removed")
+
+	# Remove Source Control dock SECOND (depends on diff viewer + API client)
 	if _source_control_dock:
 		remove_control_from_docks(_source_control_dock)
 		_source_control_dock.queue_free()
 		_source_control_dock = null
 		print("[Godot-Minds] Source Control dock removed")
 
-	# Clean up services
+	# 2. Clean up services (API client, settings)
 	if _api_client:
 		_api_client.queue_free()
 		_api_client = null
@@ -84,6 +106,10 @@ func _exit_tree() -> void:
 	if _settings_manager:
 		_settings_manager.queue_free()
 		_settings_manager = null
+
+	# 3. Clean up editor actions last
+	if _editor_actions:
+		_editor_actions = null
 
 	print("[Godot-Minds] Services cleaned up")
 	print("[Godot-Minds] Plugin disabled")
@@ -127,3 +153,9 @@ func _get_server_url() -> String:
 
 	# Fallback to default
 	return "http://127.0.0.1:8005"
+
+
+func show_diff_viewer() -> void:
+	"""Make the diff viewer bottom panel visible"""
+	if _diff_viewer_panel:
+		make_bottom_panel_item_visible(_diff_viewer_panel)
